@@ -3,10 +3,9 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:rusa/models/voyage_model.dart';
 import 'package:rusa/models/create_reservation_request.dart';
 import 'package:rusa/models/reservation_with_paiement_request.dart';
-import 'package:rusa/models/reservation_with_paiement_response.dart';
 import 'package:rusa/services/api_service.dart';
 import 'package:rusa/services/session_service.dart';
-import 'package:rusa/screens/TicketReceiptScreen.dart';
+import 'package:rusa/screens/client/TicketReceiptScreen.dart';
 import 'package:rusa/screens/client/BusDetailsScreen.dart';
 
 class SeatSelectionScreen extends StatefulWidget {
@@ -382,9 +381,7 @@ class _SeatSelectionScreenState extends State<SeatSelectionScreen> {
                 borderRadius: BorderRadius.circular(20),
               ),
             ),
-            onPressed: () {
-              _showConfirmationDialog();
-            },
+            onPressed: _showReservationOptionsDialog,
             child: const Text(
               'Reserver',
               style: TextStyle(
@@ -414,113 +411,201 @@ class _SeatSelectionScreenState extends State<SeatSelectionScreen> {
     );
   }
 
-  void _showConfirmationDialog() {
+  void _showReservationOptionsDialog() {
+    final montantController = TextEditingController();
+    int nombreDePlace = 1;
+    double montantTotal = widget.voyage.prix * nombreDePlace;
+    bool updatingMontantField = false;
+    montantController.text = (montantTotal * 0.5).toStringAsFixed(0);
+
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => Dialog(
-        backgroundColor: const Color(0xFF222222),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Icône de confirmation
-              Container(
-                width: 60,
-                height: 60,
-                decoration: BoxDecoration(
-                  color: const Color(0xFF00E676).withOpacity(0.2),
-                  borderRadius: BorderRadius.circular(30),
-                ),
-                child: const Icon(
-                  Icons.check_circle_outline,
-                  color: Color(0xFF00E676),
-                  size: 30,
-                ),
-              ),
-              const SizedBox(height: 20),
-
-              // Titre
-              Text(
-                'Confirmer la réservation',
-                style: GoogleFonts.caveat(
-                  color: Colors.white,
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 12),
-
-              // Message
-              Text(
-                'Êtes-vous sûr de vouloir réserver ce voyage pour ${widget.voyage.villeDepart} - ${widget.voyage.villeArrivee}  ?',
-                textAlign: TextAlign.center,
-                style: GoogleFonts.poppins(color: Colors.white70, fontSize: 16),
-              ),
-              const SizedBox(height: 24),
-
-              // Boutons
-              Row(
-                children: [
-                  Expanded(
-                    child: TextButton(
-                      onPressed: () => Navigator.pop(context),
-                      style: TextButton.styleFrom(
-                        backgroundColor: Colors.white.withOpacity(0.1),
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                      child: Text(
-                        'Annuler',
-                        style: GoogleFonts.poppins(
-                          color: Colors.white70,
-                          fontWeight: FontWeight.w600,
-                        ),
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          montantTotal = widget.voyage.prix * nombreDePlace;
+          final montantMaximum = montantTotal * 0.5;
+          return Dialog(
+            backgroundColor: const Color(0xFF222222),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Informations supplementaires',
+                      style: GoogleFonts.caveat(
+                        color: Colors.white,
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: () async {
-                        Navigator.pop(context);
-                        await _processReservation();
+                    const SizedBox(height: 16),
+
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text(
+                          'Nombre de sièges',
+                          style: TextStyle(color: Colors.white70),
+                        ),
+                        Row(
+                          children: [
+                            IconButton(
+                              onPressed: () {
+                                if (nombreDePlace > 1) {
+                                  setDialogState(() {
+                                    nombreDePlace--;
+                                    final total = widget.voyage.prix * nombreDePlace;
+                                    montantController.text = (total * 0.5)
+                                        .toStringAsFixed(0);
+                                  });
+                                }
+                              },
+                              icon: const Icon(
+                                Icons.remove_circle_outline,
+                                color: Colors.white,
+                              ),
+                            ),
+                            Text(
+                              '$nombreDePlace',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 18,
+                              ),
+                            ),
+                            IconButton(
+                              onPressed: () => setDialogState(() {
+                                nombreDePlace++;
+                                final total = widget.voyage.prix * nombreDePlace;
+                                montantController.text = (total * 0.5)
+                                    .toStringAsFixed(0);
+                              }),
+                              icon: const Icon(
+                                Icons.add_circle_outline,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Montant total: ${montantTotal.toStringAsFixed(0)} FC',
+                      style: const TextStyle(
+                        color: Color(0xFF00E676),
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Montant payé min (50%): ${montantMaximum.toStringAsFixed(0)} FC',
+                      style: const TextStyle(color: Colors.white70),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: montantController,
+                      keyboardType: TextInputType.number,
+                      style: const TextStyle(color: Colors.white),
+                      onChanged: (value) {
+                        if (updatingMontantField) return;
+                        final montant = double.tryParse(value.trim());
+                        if (montant == null || montant <= 0) return;
+                        final computedSeats =
+                            ((montant * 2) / widget.voyage.prix).ceil();
+                        final nextSeats = computedSeats < 1 ? 1 : computedSeats;
+                        if (nextSeats != nombreDePlace) {
+                          setDialogState(() {
+                            updatingMontantField = true;
+                            nombreDePlace = nextSeats;
+                            final minAllowed =
+                                (widget.voyage.prix * nombreDePlace) * 0.5;
+                            if (montant < minAllowed) {
+                              montantController.text = minAllowed
+                                  .toStringAsFixed(0);
+                              montantController.selection =
+                                  TextSelection.collapsed(
+                                offset: montantController.text.length,
+                              );
+                            }
+                            updatingMontantField = false;
+                          });
+                        }
                       },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF00E676),
-                        foregroundColor: Colors.black,
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                      child: Text(
-                        'Confirmer',
-                        style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
+                      decoration: const InputDecoration(
+                        labelText: 'Montant payé',
+                        labelStyle: TextStyle(color: Colors.white70),
                       ),
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 20),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextButton(
+                            onPressed: () => Navigator.pop(context),
+                            child: const Text('Annuler'),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: ElevatedButton(
+                            onPressed: () async {
+                              final montantPaye =
+                                  double.tryParse(
+                                    montantController.text.trim(),
+                                  ) ??
+                                  0;
+                              if (montantPaye <= 0 ||
+                                  montantPaye < montantMaximum ||
+                                  montantPaye > montantTotal) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text(
+                                      'Le montant payé doit être >= ${montantMaximum.toStringAsFixed(0)} FC et <= ${montantTotal.toStringAsFixed(0)} FC',
+                                    ),
+                                    backgroundColor: Colors.red,
+                                  ),
+                                );
+                                return;
+                              }
+                              Navigator.pop(context);
+                              await _processReservation(
+                                nombreDePlace: nombreDePlace,
+                                montantPaye: montantPaye,
+                              );
+                            },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF00E676),
+                              foregroundColor: Colors.black,
+                            ),
+                            child: const Text('Valider'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
-            ],
-          ),
-        ),
+            ),
+          );
+        },
       ),
     );
   }
 
-  Future<void> _processReservation() async {
-    // Afficher un message de traitement
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Création de la réservation...'),
-        backgroundColor: Color(0xFF00E676),
-      ),
-    );
+  Future<void> _processReservation({
+    required int nombreDePlace,
+    required double montantPaye,
+  }) async {
+    // Afficher le dialog de chargement
+    _showLoadingDialog();
 
     try {
       // Récupérer les informations utilisateur
@@ -528,6 +613,7 @@ class _SeatSelectionScreenState extends State<SeatSelectionScreen> {
       final userData = await session.getUserInfo();
 
       if (userData == null) {
+        _hideLoadingDialog();
         throw Exception('Impossible de récupérer les informations utilisateur');
       }
 
@@ -539,21 +625,24 @@ class _SeatSelectionScreenState extends State<SeatSelectionScreen> {
       debugPrint('Voyage ID: ${widget.voyage.id}');
       debugPrint('Societe ID: ${widget.voyage.idSociete}');
       debugPrint('Prix: ${widget.voyage.prix}');
+      final montantTotal = widget.voyage.prix * nombreDePlace;
 
       // Créer la requête de réservation avec paiement
       final reservationRequest = ReservationRequest(
         idVoyage: widget.voyage.id,
         idClient: int.tryParse(userData['client_id'] ?? '0') ?? 0,
-        nombreDePlace: 1, // Pour le moment, une place par réservation
+        nombreDePlace: nombreDePlace,
+        idUtilisateur: int.tryParse(userData['id'] ?? '0') ?? 0,
         idSociete: widget.voyage.idSociete,
       );
 
       final paiementRequest = PaiementRequest(
-        montantAPaye: widget.voyage.prix,
-        montantPaye: widget.voyage.prix, // Paiement complet
+        montantAPaye: montantTotal,
+        montantPaye: montantPaye,
         methodePaiement: 'Mobile Money', // Méthode par défaut
         referenceTransaction: 'TXN-${DateTime.now().millisecondsSinceEpoch}',
         idUtilisateur: int.tryParse(userData['id'] ?? '0') ?? 0,
+        idSociete: widget.voyage.idSociete,
       );
 
       final reservationWithPaiementRequest = ReservationWithPaiementRequest(
@@ -569,6 +658,9 @@ class _SeatSelectionScreenState extends State<SeatSelectionScreen> {
       final response = await ApiService.reservationWithPaiement(
         reservationWithPaiementRequest,
       );
+
+      // Cacher le dialog de chargement
+      _hideLoadingDialog();
 
       if (response != null) {
         // Afficher un message de succès
@@ -602,6 +694,9 @@ class _SeatSelectionScreenState extends State<SeatSelectionScreen> {
         );
       }
     } catch (e) {
+      // Cacher le dialog de chargement en cas d'erreur
+      _hideLoadingDialog();
+
       // Afficher un message d'erreur détaillé
       debugPrint('ERREUR DÉTAILLÉE: $e');
       debugPrint('Type d\'erreur: ${e.runtimeType}');
@@ -613,6 +708,54 @@ class _SeatSelectionScreenState extends State<SeatSelectionScreen> {
           duration: const Duration(seconds: 5),
         ),
       );
+    }
+  }
+
+  void _showLoadingDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => Dialog(
+        backgroundColor: const Color(0xFF222222),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(
+                width: 50,
+                height: 50,
+                child: CircularProgressIndicator(
+                  valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF00E676)),
+                  strokeWidth: 3,
+                ),
+              ),
+              const SizedBox(height: 20),
+              Text(
+                'Traitement en cours...',
+                style: GoogleFonts.poppins(
+                  color: Colors.white,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Veuillez patienter pendant\nque nous créons votre réservation',
+                textAlign: TextAlign.center,
+                style: GoogleFonts.poppins(color: Colors.white70, fontSize: 14),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _hideLoadingDialog() {
+    if (Navigator.canPop(context)) {
+      Navigator.pop(context);
     }
   }
 

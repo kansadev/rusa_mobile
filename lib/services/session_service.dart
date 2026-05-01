@@ -21,7 +21,13 @@ class SessionService {
     debugPrint('Initialisation de la session...');
     final isValid = await isSessionValid();
     if (isValid) {
-      debugPrint('Session valide trouvée, démarrage du rafraîchissement automatique');
+      debugPrint(
+        'Session valide trouvée, vérification de la cohérence du client_id...',
+      );
+
+      // Migration: fix stale client_id=0
+      await _migrateClientIdIfNeeded();
+
       await _startRefreshTimer();
     } else {
       debugPrint('Aucune session valide trouvée');
@@ -29,26 +35,176 @@ class SessionService {
     }
   }
 
+  Future<void> _migrateClientIdIfNeeded() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final storedClientId = prefs.getString('client_id');
+
+      if (storedClientId == null || storedClientId == '0') {
+        debugPrint('⚠️ client_id corrompu détecté, tentative de migration...');
+
+        // Try to get valid client_id from cached AuthResponse
+        final cachedAuth = await CacheService.getAuthResponse();
+        if (cachedAuth != null) {
+          final validClientId =
+              (cachedAuth.utilisateur.idClient != null &&
+                  cachedAuth.utilisateur.idClient! > 0)
+              ? cachedAuth.utilisateur.idClient
+              : (cachedAuth.client.idClient > 0
+                    ? cachedAuth.client.idClient
+                    : null);
+
+          if (validClientId != null && validClientId > 0) {
+            await prefs.setString('client_id', validClientId.toString());
+            debugPrint(
+              '✅ Migration réussie: client_id mis à jour à $validClientId',
+            );
+
+            // Also update Hive AuthResponse cache with corrected client
+            final correctedAuth = AuthResponse(
+              success: cachedAuth.success,
+              message: cachedAuth.message,
+              accessToken: cachedAuth.accessToken,
+              refreshToken: cachedAuth.refreshToken,
+              tokenType: cachedAuth.tokenType,
+              expiresIn: cachedAuth.expiresIn,
+              expiresAt: cachedAuth.expiresAt,
+              utilisateur: cachedAuth.utilisateur,
+              doitChangerMotDePasse: cachedAuth.doitChangerMotDePasse,
+              nomRole: cachedAuth.nomRole,
+              nomSociete: cachedAuth.nomSociete,
+              acceptNotification: cachedAuth.acceptNotification,
+              permissions: cachedAuth.permissions,
+              roles: cachedAuth.roles,
+              primaryRole: cachedAuth.primaryRole,
+              client: Client(
+                idClient: validClientId,
+                nomClient: cachedAuth.client.nomClient,
+                codeCons: cachedAuth.client.codeCons,
+                telephone: cachedAuth.client.telephone,
+                emailClient: cachedAuth.client.emailClient,
+                genreClient: cachedAuth.client.genreClient,
+                adresseClient: cachedAuth.client.adresseClient,
+                statut: cachedAuth.client.statut,
+                isActif: cachedAuth.client.isActif,
+                idAxe: cachedAuth.client.idAxe,
+                usages: cachedAuth.client.usages,
+                usagesCount: cachedAuth.client.usagesCount,
+              ),
+              agent: cachedAuth.agent,
+            );
+            await CacheService.saveAuthResponse(correctedAuth);
+            debugPrint('AuthResponse corrigé dans Hive');
+          }
+        }
+      } else {
+        debugPrint(
+          'client_id valide trouvé: $storedClientId, aucune migration nécessaire',
+        );
+      }
+    } catch (e) {
+      debugPrint('Erreur lors de la migration client_id: $e');
+    }
+  }
+
   Future<void> saveAuthData(AuthResponse authResponse) async {
     try {
       debugPrint('Sauvegarde des données d\'authentification...');
       final prefs = await SharedPreferences.getInstance();
+
+      // PRIORITY: utilisateur.idClient is the actual client ID
+      // The client object may be empty/0 for some user types
+      final effectiveClientId = authResponse.effectiveClientId;
+      debugPrint('Using effectiveClientId: $effectiveClientId');
+
       await prefs.setString('access_token', authResponse.accessToken ?? "");
       await prefs.setString('refresh_token', authResponse.refreshToken ?? "");
       await prefs.setString('token_type', authResponse.tokenType ?? "");
       await prefs.setInt('expires_in', authResponse.expiresIn);
       await prefs.setString('expires_at', authResponse.expiresAt ?? "");
-      await prefs.setString('user_id', authResponse.utilisateur.idUtilisateur.toString());
-      await prefs.setString('client_id', authResponse.client.idClient.toString());
+      await prefs.setString(
+        'user_id',
+        authResponse.utilisateur.idUtilisateur.toString(),
+      );
+      await prefs.setString('client_id', effectiveClientId.toString());
       await prefs.setString('user_name', authResponse.utilisateur.nomComplet);
       await prefs.setString('user_email', authResponse.utilisateur.email);
       await prefs.setString('user_phone', authResponse.utilisateur.telephone);
-      debugPrint('Données d\'authentification sauvegardées avec succès');
-      await CacheService.saveAuthResponse(authResponse);
-      debugPrint('AuthResponse sauvegardée dans Hive avec succès');
+      debugPrint(
+        'Données d\'authentification sauvegardées avec succès (client_id: $effectiveClientId)',
+      );
+
+      // Also update the AuthResponse before caching
+      final updatedAuth = AuthResponse(
+        success: authResponse.success,
+        message: authResponse.message,
+        accessToken: authResponse.accessToken,
+        refreshToken: authResponse.refreshToken,
+        tokenType: authResponse.tokenType,
+        expiresIn: authResponse.expiresIn,
+        expiresAt: authResponse.expiresAt,
+        utilisateur: authResponse.utilisateur,
+        doitChangerMotDePasse: authResponse.doitChangerMotDePasse,
+        nomRole: authResponse.nomRole,
+        nomSociete: authResponse.nomSociete,
+        acceptNotification: authResponse.acceptNotification,
+        permissions: authResponse.permissions,
+        roles: authResponse.roles,
+        primaryRole: authResponse.primaryRole,
+        client: Client(
+          idClient: effectiveClientId,
+          nomClient: authResponse.client.nomClient,
+          codeCons: authResponse.client.codeCons,
+          telephone: authResponse.client.telephone,
+          emailClient: authResponse.client.emailClient,
+          genreClient: authResponse.client.genreClient,
+          adresseClient: authResponse.client.adresseClient,
+          statut: authResponse.client.statut,
+          isActif: authResponse.client.isActif,
+          idAxe: authResponse.client.idAxe,
+          usages: authResponse.client.usages,
+          usagesCount: authResponse.client.usagesCount,
+        ),
+        agent: authResponse.agent,
+      );
+
+      await CacheService.saveAuthResponse(updatedAuth);
+      debugPrint('AuthResponse mise à jour et sauvegardée dans Hive');
+
+      // Mettre aussi en cache le profil client dès le login
+      // pour éviter d'attendre un appel ultérieur à getUserInfo().
+      final fullName = authResponse.utilisateur.nomComplet.trim();
+      final nameParts = fullName
+          .split(RegExp(r'\s+'))
+          .where((p) => p.isNotEmpty)
+          .toList();
+      final nom = nameParts.isNotEmpty ? nameParts.first : '';
+      final postnom = nameParts.length > 1 ? nameParts.skip(1).join(' ') : '';
+
+      await CacheService.saveClient(
+        ClientModel(
+          id: authResponse.utilisateur.idUtilisateur,
+          clientId: effectiveClientId,
+          username: fullName,
+          email: authResponse.utilisateur.email,
+          nom: nom,
+          postnom: postnom,
+          telephone: authResponse.utilisateur.telephone,
+          genre: authResponse.utilisateur.genre,
+          statut: authResponse.utilisateur.statut,
+          dateCreation: DateTime.now().toIso8601String(),
+          idRole: authResponse.utilisateur.idRole ?? 0,
+          idSociete: authResponse.utilisateur.idSociete,
+          photoUrl: authResponse.utilisateur.photoUrl,
+        ),
+      );
+      debugPrint('ClientModel sauvegardé dans Hive');
+
       await _startRefreshTimer();
     } catch (e) {
-      debugPrint('Erreur lors de la sauvegarde des données d\'authentification: $e');
+      debugPrint(
+        'Erreur lors de la sauvegarde des données d\'authentification: $e',
+      );
     }
   }
 
@@ -87,13 +243,16 @@ class SessionService {
       }
       final deviceInfo = _getDeviceInfo();
       debugPrint('Tentative de rafraîchissement du token...');
-      final authResponse = await ApiService.refreshToken(refreshToken, deviceInfo);
+      final authResponse = await ApiService.refreshToken(
+        refreshToken,
+        deviceInfo,
+      );
       if (authResponse != null) {
         await saveAuthData(authResponse);
         debugPrint('Token rafraîchi avec succès');
         return true;
       } else {
-        debugPrint('Échec du rafraîchissement du token');
+        debugPrint('Échec du rafraîchissement token');
         await clearSession();
         return false;
       }
@@ -114,7 +273,9 @@ class SessionService {
         timer.cancel();
       }
     });
-    debugPrint('Timer de rafraîchissement démarré (intervalle: ${_refreshInterval.inMinutes} minutes)');
+    debugPrint(
+      'Timer de rafraîchissement démarré (intervalle: ${_refreshInterval.inMinutes} minutes)',
+    );
   }
 
   String _getDeviceInfo() {
@@ -133,24 +294,49 @@ class SessionService {
   Future<Map<String, String>?> getUserInfo() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final userId = prefs.getString('user_id');
-      final clientId = prefs.getString('client_id');
+      String? userId = prefs.getString('user_id');
+      String? clientId = prefs.getString('client_id');
       final userName = prefs.getString('user_name');
       final userEmail = prefs.getString('user_email');
       final userPhone = prefs.getString('user_phone');
 
-      if (userId == null || clientId == null) {
-        final isValid = await isSessionValid();
-        if (!isValid) return null;
-        return getUserInfo();
+      debugPrint('=== GET USER INFO ===');
+      debugPrint('Initial - user_id: $userId, client_id: $clientId');
+
+      // Migration: If client_id is 0, fix from AuthResponse cache
+      if (clientId == null || clientId == '0') {
+        debugPrint(
+          'client_id invalid, attempting migration from cached AuthResponse...',
+        );
+        final cachedAuth = await CacheService.getAuthResponse();
+        if (cachedAuth != null) {
+          final extractedClientId =
+              cachedAuth.utilisateur.idClient ??
+              (cachedAuth.client.idClient > 0
+                  ? cachedAuth.client.idClient
+                  : null);
+          if (extractedClientId != null && extractedClientId > 0) {
+            clientId = extractedClientId.toString();
+            await prefs.setString('client_id', clientId);
+            debugPrint('✅ Migrated client_id from cache: $clientId');
+          }
+        }
       }
 
-      debugPrint('=== DEBUG SESSION (PREFS) ===');
-      debugPrint('user_id: $userId');
-      debugPrint('client_id: $clientId');
-      debugPrint('user_name: $userName');
-      debugPrint('user_email: $userEmail');
-      debugPrint('user_phone: $userPhone');
+      // Final validation
+      if (userId == null || userId.isEmpty) {
+        debugPrint('❌ user_id manquant dans getUserInfo');
+        return null;
+      }
+
+      // Forcer la déconnexion ici causait un logout inattendu sur certains écrans
+      // (notamment profil) quand client_id est absent/0.
+      // On ne nettoie plus la session; on fournit une valeur neutre.
+      if (clientId == null || clientId.isEmpty) {
+        clientId = '0';
+      }
+
+      debugPrint('✅ Final - user_id: $userId, client_id: $clientId');
 
       final userInfo = {
         'id': userId,
@@ -159,21 +345,28 @@ class SessionService {
         'email': userEmail ?? '',
         'phone': userPhone ?? '',
       };
-      await CacheService.saveClient(ClientModel(
-        id: int.tryParse(userId) ?? 0,
-        clientId: int.tryParse(clientId) ?? 0,
-        username: userName ?? '',
-        email: userEmail ?? '',
-        nom: '',
-        postnom: '',
-        telephone: userPhone ?? '',
-        genre: 'Masculin',
-        statut: true,
-        dateCreation: DateTime.now().toIso8601String(),
-        idRole: 6,
-        idSociete: 1,
-        photoUrl: null,
-      ));
+
+      // Update Hive cache uniquement si client_id valide (> 0)
+      final parsedClientId = int.tryParse(clientId) ?? 0;
+      if (parsedClientId > 0) {
+        await CacheService.saveClient(
+          ClientModel(
+            id: int.tryParse(userId) ?? 0,
+            clientId: parsedClientId,
+            username: userName ?? '',
+            email: userEmail ?? '',
+            nom: '',
+            postnom: '',
+            telephone: userPhone ?? '',
+            genre: 'Masculin',
+            statut: true,
+            dateCreation: DateTime.now().toIso8601String(),
+            idRole: 6,
+            idSociete: 1,
+            photoUrl: null,
+          ),
+        );
+      }
       return userInfo;
     } catch (e) {
       debugPrint('Erreur lors de la récupération des infos utilisateur: $e');
@@ -186,7 +379,42 @@ class SessionService {
       final isValid = await isSessionValid();
       if (!isValid) return null;
       final prefs = await SharedPreferences.getInstance();
-      return prefs.getString('client_id');
+      var clientId = prefs.getString('client_id');
+
+      // Recovery if client_id is 0 or null
+      if (clientId == null || clientId == '0') {
+        debugPrint(
+          'getClientId: client_id is $clientId, attempting recovery...',
+        );
+        final cachedAuth = await CacheService.getAuthResponse();
+        if (cachedAuth != null) {
+          final recovered =
+              (cachedAuth.utilisateur.idClient != null &&
+                  cachedAuth.utilisateur.idClient! > 0)
+              ? cachedAuth.utilisateur.idClient
+              : (cachedAuth.client.idClient > 0
+                    ? cachedAuth.client.idClient
+                    : null);
+          if (recovered != null) {
+            clientId = recovered.toString();
+            await prefs.setString('client_id', clientId);
+            debugPrint('Recovered client_id in getClientId: $clientId');
+          }
+        }
+      }
+
+      if (clientId == null || clientId == '0') {
+        final cachedClient = await CacheService.getClient();
+        if (cachedClient != null && cachedClient.clientId > 0) {
+          clientId = cachedClient.clientId.toString();
+          await prefs.setString('client_id', clientId);
+          debugPrint(
+            'Recovered client_id from Hive Client in getClientId: $clientId',
+          );
+        }
+      }
+
+      return clientId;
     } catch (e) {
       debugPrint('Erreur lors de la récupération de l\'ID client: $e');
       return null;

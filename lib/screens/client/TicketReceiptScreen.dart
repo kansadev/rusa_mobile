@@ -1,0 +1,523 @@
+import 'dart:io';
+import 'dart:typed_data';
+import 'dart:ui' as ui;
+
+import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'package:image/image.dart' as img;
+import 'package:path_provider/path_provider.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:permission_handler/permission_handler.dart';
+import 'package:qr_flutter/qr_flutter.dart';
+import 'package:rusa/models/reservation_with_paiement_response.dart';
+import 'package:saver_gallery/saver_gallery.dart';
+
+class TicketReceiptScreen extends StatefulWidget {
+  final ReservationData? reservationData;
+  final PaiementData? paiementData;
+  final BilletData? billetData;
+
+  const TicketReceiptScreen({
+    super.key,
+    this.reservationData,
+    this.paiementData,
+    this.billetData,
+  });
+
+  @override
+  State<TicketReceiptScreen> createState() => _TicketReceiptScreenState();
+}
+
+class _TicketReceiptScreenState extends State<TicketReceiptScreen> {
+  final GlobalKey _ticketKey = GlobalKey();
+  bool _isSaving = false;
+
+  String _formatDate(String? dateString) {
+    if (dateString == null || dateString.isEmpty) return 'N/A';
+    try {
+      final date = DateTime.parse(dateString);
+      return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
+    } catch (_) {
+      return dateString;
+    }
+  }
+
+  String _formatTimeFromString(String? timeString) {
+    if (timeString == null || timeString.isEmpty) return 'N/A';
+    final parts = timeString.split(':');
+    if (parts.length >= 2) {
+      return '${parts[0].padLeft(2, '0')}:${parts[1].padLeft(2, '0')}';
+    }
+    return timeString;
+  }
+
+  Future<Uint8List?> _captureTicket() async {
+    try {
+      final boundary =
+          _ticketKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
+      if (boundary == null) return null;
+      final image = await boundary.toImage(pixelRatio: 3);
+      final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+      return byteData?.buffer.asUint8List();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> _saveAsJpg() async {
+    if (_isSaving) return;
+    setState(() => _isSaving = true);
+    try {
+      final pngBytes = await _captureTicket();
+      if (pngBytes == null || !mounted) return;
+      final decoded = img.decodeImage(pngBytes);
+      if (decoded == null || !mounted) return;
+      final jpgBytes = Uint8List.fromList(img.encodeJpg(decoded, quality: 92));
+
+      final hasPermission = await _requestGalleryPermission();
+      if (!hasPermission) {
+        if (!mounted) return;
+        _showSnack(
+          'Permission galerie refusée. Autorisez l\'accès aux photos.',
+          isError: true,
+        );
+        return;
+      }
+
+      final imageName = 'ticket_${DateTime.now().millisecondsSinceEpoch}.jpg';
+      final result = await SaverGallery.saveImage(
+        jpgBytes,
+        quality: 92,
+        fileName: imageName,
+        androidRelativePath: 'Pictures/RusaTravel',
+        skipIfExists: false,
+      );
+
+      if (!mounted) return;
+      if (result.isSuccess) {
+        _showSnack('Image enregistrée dans la galerie.');
+      } else {
+        _showSnack(
+          result.errorMessage?.trim().isNotEmpty == true
+              ? result.errorMessage!
+              : 'Échec de l\'enregistrement dans la galerie.',
+          isError: true,
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        _showSnack('Erreur lors de l\'export image.', isError: true);
+      }
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
+  }
+
+  Future<void> _saveAsPdf() async {
+    if (_isSaving) return;
+    setState(() => _isSaving = true);
+    try {
+      final pngBytes = await _captureTicket();
+      if (pngBytes == null || !mounted) return;
+
+      final pdf = pw.Document();
+      final memoryImage = pw.MemoryImage(pngBytes);
+      pdf.addPage(
+        pw.Page(
+          pageFormat: PdfPageFormat.a4,
+          build: (_) => pw.Center(
+            child: pw.Image(memoryImage, fit: pw.BoxFit.contain),
+          ),
+        ),
+      );
+
+      final dir = await getApplicationDocumentsDirectory();
+      final file = File(
+        '${dir.path}${Platform.pathSeparator}ticket_${DateTime.now().millisecondsSinceEpoch}.pdf',
+      );
+      await file.writeAsBytes(await pdf.save(), flush: true);
+      if (!mounted) return;
+      _showSnack('Ticket enregistré dans le dossier documents de l\'appareil.');
+    } catch (e) {
+      if (mounted) {
+        _showSnack('Erreur lors de l\'export du ticket.', isError: true);
+      }
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
+  }
+
+  Future<bool> _requestGalleryPermission() async {
+    if (Platform.isIOS) {
+      final status = await Permission.photos.request();
+      return status.isGranted || status.isLimited;
+    }
+
+    // Android (selon version, photos ou storage peut être requis)
+    final photosStatus = await Permission.photos.request();
+    if (photosStatus.isGranted || photosStatus.isLimited) return true;
+
+    final storageStatus = await Permission.storage.request();
+    return storageStatus.isGranted;
+  }
+
+  void _showSnack(String message, {bool isError = false}) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        duration: const Duration(seconds: 3),
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: isError ? Colors.redAccent : const Color(0xFF1E8E3E),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final hasBillet = widget.billetData != null;
+    final qrCode = widget.billetData?.qrCode ?? '';
+    final route =
+        '${widget.reservationData?.villeDepart ?? 'N/A'} → ${widget.reservationData?.villeArrivee ?? 'N/A'}';
+    final date = _formatDate(widget.reservationData?.dateVoyage);
+    final time = _formatTimeFromString(
+      widget.reservationData?.heureVoyage?.formattedTime,
+    );
+    final price =
+        '${widget.paiementData?.montantPaye.toStringAsFixed(0) ?? '0'} FC';
+    final passengerName =
+        widget.reservationData?.nomClient ??
+        widget.reservationData?.nomUtilisateur ??
+        'N/A';
+
+    return Scaffold(
+      backgroundColor: const Color(0xFF121212),
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        leading: GestureDetector(
+          onTap: () => Navigator.pop(context),
+          child: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
+        ),
+        title: Text(
+          'Mon Billet',
+          style: GoogleFonts.caveat(
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
+          ),
+        ),
+        centerTitle: true,
+        actions: [
+          PopupMenuButton<String>(
+            enabled: !_isSaving,
+            icon: const Icon(Icons.more_vert, color: Colors.white),
+            color: const Color(0xFF1E1E1E),
+            onSelected: (value) {
+              if (value == 'pdf') {
+                _saveAsPdf();
+              } else if (value == 'jpg') {
+                _saveAsJpg();
+              }
+            },
+            itemBuilder: (context) => const [
+              PopupMenuItem<String>(
+                value: 'pdf',
+                child: Row(
+                  children: [
+                    Icon(Icons.picture_as_pdf_outlined, color: Color(0xFF00E676)),
+                    SizedBox(width: 10),
+                    Text('Télécharger en PDF'),
+                  ],
+                ),
+              ),
+              PopupMenuItem<String>(
+                value: 'jpg',
+                child: Row(
+                  children: [
+                    Icon(Icons.image_outlined, color: Color(0xFF00E676)),
+                    SizedBox(width: 10),
+                    Text('Télécharger en JPG'),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+      body: SafeArea(
+        child: Column(
+          children: [
+            Expanded(
+              child: Center(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                  child: RepaintBoundary(
+                    key: _ticketKey,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
+                            decoration: const BoxDecoration(
+                              color: Color(0xFF00E676),
+                              borderRadius: BorderRadius.only(
+                                topLeft: Radius.circular(20),
+                                topRight: Radius.circular(20),
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(
+                                  'RUSATRAVEL',
+                                  style: GoogleFonts.caveat(
+                                    fontSize: 22,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.black,
+                                  ),
+                                ),
+                                Text(
+                                  'BILLET',
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                    letterSpacing: 1.5,
+                                    color: Colors.black87,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.only(top: 24, left: 20, right: 20, bottom: 10),
+                            child: Column(
+                              children: [
+                                hasBillet
+                                    ? Container(
+                                        padding: const EdgeInsets.all(12),
+                                        decoration: BoxDecoration(
+                                          border: Border.all(
+                                            color: const Color(0xFF00E676),
+                                            width: 2,
+                                          ),
+                                          borderRadius: BorderRadius.circular(16),
+                                        ),
+                                        child: QrImageView(
+                                          data: qrCode,
+                                          version: QrVersions.auto,
+                                          size: 160,
+                                          backgroundColor: Colors.white,
+                                        ),
+                                      )
+                                    : Container(
+                                        width: double.infinity,
+                                        padding: const EdgeInsets.all(16),
+                                        decoration: BoxDecoration(
+                                          color: Colors.orange.withValues(alpha: 0.12),
+                                          border: Border.all(color: Colors.orange, width: 1.2),
+                                          borderRadius: BorderRadius.circular(12),
+                                        ),
+                                        child: const Text(
+                                          'Billet non encore émis.\nRevenez après validation de la réservation.',
+                                          textAlign: TextAlign.center,
+                                          style: TextStyle(
+                                            color: Colors.black87,
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                      ),
+                                const SizedBox(height: 24),
+                                Text(
+                                  route,
+                                  textAlign: TextAlign.center,
+                                  style: const TextStyle(
+                                    fontSize: 22,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.black87,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const TicketSeparator(),
+                          Padding(
+                            padding: const EdgeInsets.only(top: 10, left: 24, right: 24, bottom: 24),
+                            child: Column(
+                              children: [
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          const Text(
+                                            'PASSAGER',
+                                            style: TextStyle(
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.bold,
+                                              color: Colors.black45,
+                                              letterSpacing: 1.0,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            passengerName.toUpperCase(),
+                                            style: const TextStyle(
+                                              fontSize: 15,
+                                              fontWeight: FontWeight.bold,
+                                              color: Colors.black87,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.end,
+                                        children: [
+                                          const Text(
+                                            'PRIX',
+                                            style: TextStyle(
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.bold,
+                                              color: Colors.black45,
+                                              letterSpacing: 1.0,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            price,
+                                            style: const TextStyle(
+                                              fontSize: 18,
+                                              fontWeight: FontWeight.bold,
+                                              color: Color(0xFF00E676),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 20),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFF5F5F5),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      const Icon(
+                                        Icons.calendar_today_outlined,
+                                        size: 16,
+                                        color: Colors.black54,
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Text(
+                                        'Départ le $date à $time',
+                                        style: const TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w600,
+                                          color: Colors.black87,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+           
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class TicketSeparator extends StatelessWidget {
+  const TicketSeparator({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Container(
+          height: 30,
+          width: 15,
+          decoration: const BoxDecoration(
+            color: Color(0xFF121212),
+            borderRadius: BorderRadius.only(
+              topRight: Radius.circular(15),
+              bottomRight: Radius.circular(15),
+            ),
+          ),
+        ),
+        const Expanded(
+          child: Padding(
+            padding: EdgeInsets.symmetric(horizontal: 10),
+            child: DashedLine(color: Colors.black26, height: 1.5),
+          ),
+        ),
+        Container(
+          height: 30,
+          width: 15,
+          decoration: const BoxDecoration(
+            color: Color(0xFF121212),
+            borderRadius: BorderRadius.only(
+              topLeft: Radius.circular(15),
+              bottomLeft: Radius.circular(15),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class DashedLine extends StatelessWidget {
+  final Color color;
+  final double height;
+
+  const DashedLine({super.key, this.color = Colors.black26, this.height = 1.0});
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final boxWidth = constraints.constrainWidth();
+        const dashWidth = 6.0;
+        final dashCount = (boxWidth / (2 * dashWidth)).floor();
+        return Flex(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          direction: Axis.horizontal,
+          children: List.generate(dashCount, (_) {
+            return SizedBox(
+              width: dashWidth,
+              height: height,
+              child: DecoratedBox(decoration: BoxDecoration(color: color)),
+            );
+          }),
+        );
+      },
+    );
+  }
+}

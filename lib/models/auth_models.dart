@@ -19,6 +19,15 @@ class AuthResponse {
   final Client client;
   final Agent? agent;
 
+  int get effectiveClientId {
+    final userClientId = utilisateur.idClient ?? 0;
+    if (userClientId > 0) return userClientId;
+    return client.idClient;
+  }
+
+  bool get hasClientProfile => effectiveClientId > 0;
+  bool get hasAgentProfile => (agent?.idAgent ?? utilisateur.idAgent ?? 0) > 0;
+
   AuthResponse({
      this.success,
      this.message,
@@ -40,6 +49,9 @@ class AuthResponse {
   });
 
   factory AuthResponse.fromJson(Map<String, dynamic> json) {
+    final clientData = _normalizeSection(json['client']);
+    final agentData = _normalizeSection(json['agent']);
+
     return AuthResponse(
       success: json['success'] ?? false,
       message: json['message'] ?? '',
@@ -59,9 +71,17 @@ class AuthResponse {
       primaryRole: json['primaryRole'] != null
           ? Role.fromJson(json['primaryRole'])
           : Role(idRole: 0, nom: '', niveau: 0, statut: false),
-      client: Client.fromJson(json['client'] ?? {}),
-      agent: json['agent'] != null ? Agent.fromJson(json['agent']) : null,
+      client: Client.fromJson(clientData ?? {}),
+      agent: agentData != null ? Agent.fromJson(agentData) : null,
     );
+  }
+
+  static Map<String, dynamic>? _normalizeSection(dynamic section) {
+    if (section is Map<String, dynamic>) return section;
+    if (section is List && section.isNotEmpty && section.first is Map<String, dynamic>) {
+      return section.first as Map<String, dynamic>;
+    }
+    return null;
   }
 
   Map<String, dynamic> toJson() {
@@ -146,7 +166,7 @@ class Utilisateur {
       idSociete: json['idSociete'] ?? 0,
       adresseResidence: json['adresseResidence'],
       idAgent: json['idAgent'],
-      idClient: json['idClient'],
+      idClient: json['idClient'] ?? json['clientId'] ?? json['client_id'],
       roles: (json['roles'] as List?) ?? [],
       primaryRole: json['primaryRole'] != null
           ? Role.fromJson(json['primaryRole'])
@@ -243,6 +263,19 @@ class Client {
     this.usagesCount = 0,
   });
 
+  factory Client.empty() {
+    return Client(
+      idClient: 0,
+      nomClient: '',
+      telephone: '',
+      emailClient: '',
+      genreClient: '',
+      statut: false,
+      isActif: false,
+      usages: const [],
+    );
+  }
+
   factory Client.fromJson(Map<String, dynamic> json) {
     return Client(
       idClient: json['idClient'] ?? 0,
@@ -278,19 +311,75 @@ class Client {
 
 class Agent {
   final int idAgent;
-  final String nomAgent;
+  final String nomComplet;
+  final String? matricule;
+  final String? genre;
+  final String? dateNaissance;
+  final String? telephoneAgent;
+  final String? emailAgent;
+  final bool? statut;
+  final String? fonction;
+  final String? roleAgent;
+  final String? photoUrl;
+  final int? idSociete;
+  final String? adresseResidence;
+  final String? zone;
 
-  Agent({required this.idAgent, required this.nomAgent});
+  String get nomAgent => nomComplet;
+
+  Agent({
+    required this.idAgent,
+    required this.nomComplet,
+    this.matricule,
+    this.genre,
+    this.dateNaissance,
+    this.telephoneAgent,
+    this.emailAgent,
+    this.statut,
+    this.fonction,
+    this.roleAgent,
+    this.photoUrl,
+    this.idSociete,
+    this.adresseResidence,
+    this.zone,
+  });
 
   factory Agent.fromJson(Map<String, dynamic> json) {
     return Agent(
       idAgent: json['idAgent'] ?? 0,
-      nomAgent: json['nomAgent'] ?? '',
+      nomComplet: json['nomComplet'] ?? json['nomAgent'] ?? '',
+      matricule: json['matricule'],
+      genre: json['genre'],
+      dateNaissance: json['dateNaissance'],
+      telephoneAgent: json['telephoneAgent'],
+      emailAgent: json['emailAgent'],
+      statut: json['statut'],
+      fonction: json['fonction'],
+      roleAgent: json['roleAgent'],
+      photoUrl: json['photoUrl'],
+      idSociete: json['idSociete'],
+      adresseResidence: json['adresseResidence'],
+      zone: json['zone'],
     );
   }
 
   Map<String, dynamic> toJson() {
-    return {'idAgent': idAgent, 'nomAgent': nomAgent};
+    return {
+      'idAgent': idAgent,
+      'nomComplet': nomComplet,
+      'matricule': matricule,
+      'genre': genre,
+      'dateNaissance': dateNaissance,
+      'telephoneAgent': telephoneAgent,
+      'emailAgent': emailAgent,
+      'statut': statut,
+      'fonction': fonction,
+      'roleAgent': roleAgent,
+      'photoUrl': photoUrl,
+      'idSociete': idSociete,
+      'adresseResidence': adresseResidence,
+      'zone': zone,
+    };
   }
 }
 

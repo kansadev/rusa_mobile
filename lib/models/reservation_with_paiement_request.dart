@@ -8,10 +8,7 @@ class ReservationWithPaiementRequest {
   });
 
   Map<String, dynamic> toJson() {
-    return {
-      'reservation': reservation.toJson(),
-      'paiement': paiement.toJson(),
-    };
+    return {'reservation': reservation.toJson(), 'paiement': paiement.toJson()};
   }
 }
 
@@ -19,6 +16,7 @@ class ReservationRequest {
   final int idVoyage;
   final int idClient;
   final int nombreDePlace;
+  final int idUtilisateur;
   final int idSociete;
   final String statutReservation;
 
@@ -26,6 +24,7 @@ class ReservationRequest {
     required this.idVoyage,
     required this.idClient,
     required this.nombreDePlace,
+    required this.idUtilisateur,
     required this.idSociete,
     this.statutReservation = 'EN_ATTENTE',
   });
@@ -35,6 +34,7 @@ class ReservationRequest {
       'idVoyage': idVoyage,
       'idClient': idClient,
       'nombreDePlace': nombreDePlace,
+      'idUtilisateur': idUtilisateur,
       'idSociete': idSociete,
       'statutReservation': statutReservation,
     };
@@ -47,6 +47,7 @@ class PaiementRequest {
   final String methodePaiement;
   final String referenceTransaction;
   final int idUtilisateur;
+  final int idSociete;
 
   PaiementRequest({
     required this.montantAPaye,
@@ -54,6 +55,7 @@ class PaiementRequest {
     required this.methodePaiement,
     required this.referenceTransaction,
     required this.idUtilisateur,
+    required this.idSociete,
   });
 
   Map<String, dynamic> toJson() {
@@ -63,6 +65,7 @@ class PaiementRequest {
       'methodePaiement': methodePaiement,
       'referenceTransaction': referenceTransaction,
       'idUtilisateur': idUtilisateur,
+      'idSociete': idSociete,
     };
   }
 }

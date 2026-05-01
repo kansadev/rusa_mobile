@@ -1,16 +1,29 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 import 'package:rusa/widgets/OnboardingScreen.dart';
+import 'package:rusa/widgets/CaissierNavigationWrapper.dart';
 import 'package:rusa/widgets/MyNavigationWrapper.dart';
-import 'package:rusa/screens/client/AcceuilScreen.dart';
-import 'package:rusa/screens/auth/LoginScreen.dart';
+import 'package:rusa/screens/auth/UnsupportedRoleScreen.dart';
 import 'package:rusa/services/session_service.dart';
+import 'package:rusa/services/cache_service.dart';
+import 'package:rusa/adapters/hive_adapters.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  // Initialiser Hive avec hive_flutter
+  await Hive.initFlutter();
+
+  registerHiveAdapters();
+  await CacheService.init();
+
   // Initialiser la session au démarrage de l'app
   await SessionService().initializeSession();
+
+  // DEBUG: Vérifier la cohérence CacheService ? Modèles
+  await CacheService.debugPrintCacheStatus();
 
   runApp(const RusaTravelApp());
 }
@@ -63,6 +76,9 @@ class _AuthWrapperState extends State<AuthWrapper> {
   final SessionService _sessionService = SessionService();
   bool _isLoading = true;
   bool _isAuthenticated = false;
+  bool _isClientRole = false;
+  bool _isCaissierRole = false;
+  String? _roleName;
 
   @override
   void initState() {
@@ -73,14 +89,31 @@ class _AuthWrapperState extends State<AuthWrapper> {
   Future<void> _checkAuthStatus() async {
     try {
       final isValid = await _sessionService.isSessionValid();
+      String? roleName;
+      bool isClientRole = false;
+      bool isCaissierRole = false;
+      if (isValid) {
+        final prefs = await SharedPreferences.getInstance();
+        final clientId = prefs.getString('client_id');
+        roleName = (await CacheService.getAuthResponse())?.nomRole;
+        final loweredRole = (roleName ?? '').toLowerCase();
+        isCaissierRole = loweredRole.contains('caiss');
+        isClientRole = clientId != null && clientId != '0';
+      }
       setState(() {
         _isAuthenticated = isValid;
+        _isClientRole = isClientRole;
+        _isCaissierRole = isCaissierRole;
+        _roleName = roleName;
         _isLoading = false;
       });
     } catch (e) {
       debugPrint('Erreur lors de la vérification de l\'authentification: $e');
       setState(() {
         _isAuthenticated = false;
+        _isClientRole = false;
+        _isCaissierRole = false;
+        _roleName = null;
         _isLoading = false;
       });
     }
@@ -111,8 +144,15 @@ class _AuthWrapperState extends State<AuthWrapper> {
       );
     }
 
-    return _isAuthenticated
-        ? const MyNavigationWrapper()
-        : const OnboardingScreen();
+    if (!_isAuthenticated) {
+      return const OnboardingScreen();
+    }
+    if (_isCaissierRole) {
+      return const CaissierNavigationWrapper();
+    }
+    if (!_isClientRole) {
+      return UnsupportedRoleScreen(roleName: _roleName);
+    }
+    return const MyNavigationWrapper();
   }
 }

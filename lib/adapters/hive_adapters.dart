@@ -237,6 +237,14 @@ class AuthResponseAdapter extends TypeAdapter<AuthResponse> {
 
   @override
   AuthResponse read(BinaryReader reader) {
+    final success = reader.readBool();
+    final message = reader.readString();
+    final accessToken = reader.readString();
+    final refreshToken = reader.readString();
+    final tokenType = reader.readString();
+    final expiresIn = reader.readInt();
+    final expiresAt = reader.readString();
+
     // Lire utilisateur
     final idUtilisateur = reader.readInt();
     final referenceUtilisateur = reader.readString();
@@ -253,7 +261,7 @@ class AuthResponseAdapter extends TypeAdapter<AuthResponse> {
     final idSociete = reader.readInt();
     final adresseResidence = reader.readString();
     final idAgent = reader.readInt();
-    final idClient = reader.readInt();
+    final clientIdValue = reader.readInt();
     final rolesCount = reader.readInt();
     final roles = <dynamic>[];
     for (var i = 0; i < rolesCount; i++) {
@@ -286,7 +294,7 @@ class AuthResponseAdapter extends TypeAdapter<AuthResponse> {
       idSociete: idSociete,
       adresseResidence: adresseResidence,
       idAgent: idAgent,
-      idClient: idClient,
+      idClient: clientIdValue,
       roles: roles,
       primaryRole: primaryRole,
     );
@@ -303,13 +311,15 @@ class AuthResponseAdapter extends TypeAdapter<AuthResponse> {
     final rolesCount2 = reader.readInt();
     final roles2 = <Role>[];
     for (var i = 0; i < rolesCount2; i++) {
-      roles2.add(Role(
-        idRole: reader.readInt(),
-        nom: reader.readString(),
-        description: reader.readString(),
-        niveau: reader.readInt(),
-        statut: reader.readBool(),
-      ));
+      roles2.add(
+        Role(
+          idRole: reader.readInt(),
+          nom: reader.readString(),
+          description: reader.readString(),
+          niveau: reader.readInt(),
+          statut: reader.readBool(),
+        ),
+      );
     }
     final hasPrimaryRole2 = reader.readBool();
     final primaryRole2 = hasPrimaryRole2
@@ -322,37 +332,45 @@ class AuthResponseAdapter extends TypeAdapter<AuthResponse> {
           )
         : Role(idRole: 0, nom: 'Client', niveau: 0, statut: true);
 
+    final idClient = reader.readInt();
+    final nomClient = reader.readString();
+    final codeCons = reader.readString();
+    final telephoneClient = reader.readString();
+    final emailClient = reader.readString();
+    final genreClient = reader.readString();
+    final adresseClient = reader.readString();
+    final statutClient = reader.readBool();
+    final isActifClient = reader.readBool();
+    final idAxeClient = reader.readInt();
+    final clientUsagesCount = reader.readInt();
     final client = Client(
-      idClient: reader.readInt(),
-      nomClient: reader.readString(),
-      codeCons: reader.readString(),
-      telephone: reader.readString(),
-      emailClient: reader.readString(),
-      genreClient: reader.readString(),
-      adresseClient: reader.readString(),
-      statut: reader.readBool(),
-      isActif: reader.readBool(),
-      idAxe: reader.readInt(),
-      usagesCount: reader.readInt(),
-      usages: List<String>.generate(reader.readInt(), (_) => reader.readString()),
+      idClient: idClient,
+      nomClient: nomClient,
+      codeCons: codeCons,
+      telephone: telephoneClient,
+      emailClient: emailClient,
+      genreClient: genreClient,
+      adresseClient: adresseClient,
+      statut: statutClient,
+      isActif: isActifClient,
+      idAxe: idAxeClient,
+      usagesCount: clientUsagesCount,
+      usages: List<String>.generate(clientUsagesCount, (_) => reader.readString()),
     );
 
     final hasAgent = reader.readBool();
     final agent = hasAgent
-        ? Agent(
-            idAgent: reader.readInt(),
-            nomAgent: reader.readString(),
-          )
+        ? Agent(idAgent: reader.readInt(), nomComplet: reader.readString())
         : null;
 
     return AuthResponse(
-      success: reader.readBool(),
-      message: reader.readString(),
-      accessToken: reader.readString(),
-      refreshToken: reader.readString(),
-      tokenType: reader.readString(),
-      expiresIn: reader.readInt(),
-      expiresAt: reader.readString(),
+      success: success,
+      message: message,
+      accessToken: accessToken,
+      refreshToken: refreshToken,
+      tokenType: tokenType,
+      expiresIn: expiresIn,
+      expiresAt: expiresAt,
       utilisateur: utilisateur,
       doitChangerMotDePasse: doitChangerMotDePasse2,
       nomRole: nomRole,
@@ -428,7 +446,7 @@ class AuthResponseAdapter extends TypeAdapter<AuthResponse> {
     writer.writeString(obj.primaryRole.description ?? '');
     writer.writeInt(obj.primaryRole.niveau);
     writer.writeBool(obj.primaryRole.statut);
-  
+
     writer.writeInt(obj.client.idClient);
     writer.writeString(obj.client.nomClient);
     writer.writeString(obj.client.codeCons ?? '');
@@ -447,7 +465,7 @@ class AuthResponseAdapter extends TypeAdapter<AuthResponse> {
     writer.writeBool(obj.agent != null);
     if (obj.agent != null) {
       writer.writeInt(obj.agent!.idAgent);
-      writer.writeString(obj.agent!.nomAgent);
+      writer.writeString(obj.agent!.nomComplet);
     }
   }
 }
@@ -478,19 +496,6 @@ class ReservationWithPaiementResponseAdapter
         prenomClient: reader.readString(),
         telephoneClient: reader.readString(),
         dateVoyage: reader.readString(),
-        heureVoyage: HeureVoyage(
-          ticks: reader.readInt(),
-          days: reader.readInt(),
-          hours: reader.readInt(),
-          milliseconds: reader.readInt(),
-          minutes: reader.readInt(),
-          seconds: reader.readInt(),
-          totalDays: reader.readDouble(),
-          totalHours: reader.readDouble(),
-          totalMilliseconds: reader.readDouble(),
-          totalMinutes: reader.readDouble(),
-          totalSeconds: reader.readDouble(),
-        ),
         prixVoyage: reader.readDouble(),
         numeroBus: reader.readString(),
         villeDepart: reader.readString(),
@@ -512,15 +517,17 @@ class ReservationWithPaiementResponseAdapter
         estComplet: reader.readBool(),
         estPartiel: reader.readBool(),
       ),
-      billet: BilletData(
-        id: reader.readInt(),
-        qrCode: reader.readString(),
-        dateGeneration: reader.readString(),
-        idReservation: reader.readInt(),
-        idClient: reader.readInt(),
-        idSociete: reader.readInt(),
-        urlBillet: reader.readString(),
-      ),
+      billet: reader.readBool()
+          ? BilletData(
+              id: reader.readInt(),
+              qrCode: reader.readString(),
+              dateGeneration: reader.readString(),
+              idReservation: reader.readInt(),
+              idClient: reader.readInt(),
+              idSociete: reader.readInt(),
+              urlBillet: reader.readString(),
+            )
+          : null,
       transactionId: reader.readString(),
       statut: reader.readString(),
       message: reader.readString(),
@@ -539,30 +546,18 @@ class ReservationWithPaiementResponseAdapter
     writer.writeString(obj.reservation.dateReservation);
     writer.writeInt(obj.reservation.idSociete);
     writer.writeString(obj.reservation.dateCreation);
-    writer.writeString(obj.reservation.dateModification);
-    writer.writeString(obj.reservation.nomUtilisateur);
-    writer.writeString(obj.reservation.emailUtilisateur);
-    writer.writeString(obj.reservation.nomClient);
-    writer.writeString(obj.reservation.prenomClient);
-    writer.writeString(obj.reservation.telephoneClient);
-    writer.writeString(obj.reservation.dateVoyage);
+    writer.writeString(obj.reservation.dateModification ?? "");
+    writer.writeString(obj.reservation.nomUtilisateur ?? "");
+    writer.writeString(obj.reservation.emailUtilisateur ?? "");
+    writer.writeString(obj.reservation.nomClient ?? "");
+    writer.writeString(obj.reservation.prenomClient ?? "");
+    writer.writeString(obj.reservation.telephoneClient ?? "");
+    writer.writeString(obj.reservation.dateVoyage ?? "");
 
-    writer.writeInt(obj.reservation.heureVoyage.ticks);
-    writer.writeInt(obj.reservation.heureVoyage.days);
-    writer.writeInt(obj.reservation.heureVoyage.hours);
-    writer.writeInt(obj.reservation.heureVoyage.milliseconds);
-    writer.writeInt(obj.reservation.heureVoyage.minutes);
-    writer.writeInt(obj.reservation.heureVoyage.seconds);
-    writer.writeDouble(obj.reservation.heureVoyage.totalDays);
-    writer.writeDouble(obj.reservation.heureVoyage.totalHours);
-    writer.writeDouble(obj.reservation.heureVoyage.totalMilliseconds);
-    writer.writeDouble(obj.reservation.heureVoyage.totalMinutes);
-    writer.writeDouble(obj.reservation.heureVoyage.totalSeconds);
-
-    writer.writeDouble(obj.reservation.prixVoyage);
-    writer.writeString(obj.reservation.numeroBus);
-    writer.writeString(obj.reservation.villeDepart);
-    writer.writeString(obj.reservation.villeArrivee);
+    writer.writeDouble(obj.reservation.prixVoyage ?? 0.0);
+    writer.writeString(obj.reservation.numeroBus ?? "");
+    writer.writeString(obj.reservation.villeDepart ?? "");
+    writer.writeString(obj.reservation.villeArrivee ?? "");
 
     writer.writeInt(obj.paiement.idPaiement);
     writer.writeDouble(obj.paiement.montantAPaye);
@@ -579,13 +574,16 @@ class ReservationWithPaiementResponseAdapter
     writer.writeBool(obj.paiement.estComplet);
     writer.writeBool(obj.paiement.estPartiel);
 
-    writer.writeInt(obj.billet.id);
-    writer.writeString(obj.billet.qrCode);
-    writer.writeString(obj.billet.dateGeneration);
-    writer.writeInt(obj.billet.idReservation);
-    writer.writeInt(obj.billet.idClient);
-    writer.writeInt(obj.billet.idSociete);
-    writer.writeString(obj.billet.urlBillet);
+    writer.writeBool(obj.billet != null);
+    if (obj.billet != null) {
+      writer.writeInt(obj.billet!.id);
+      writer.writeString(obj.billet!.qrCode);
+      writer.writeString(obj.billet!.dateGeneration);
+      writer.writeInt(obj.billet!.idReservation);
+      writer.writeInt(obj.billet!.idClient);
+      writer.writeInt(obj.billet!.idSociete);
+      writer.writeString(obj.billet!.urlBillet);
+    }
 
     writer.writeString(obj.transactionId);
     writer.writeString(obj.statut);

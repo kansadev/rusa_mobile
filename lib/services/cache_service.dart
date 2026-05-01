@@ -1,373 +1,373 @@
 import 'dart:convert';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:flutter/foundation.dart';
-import '../models/client_model.dart';
-import '../models/voyage_model.dart';
-import '../models/reservation_model.dart';
-import '../models/destination_model.dart';
-import '../models/bus_model.dart';
-import '../models/auth_models.dart';
-import '../models/reservation_with_paiement_response.dart';
+import 'package:flutter/material.dart';
+import 'package:hive/hive.dart';
+import 'package:rusa/models/client_model.dart';
+import 'package:rusa/models/voyage_model.dart';
+import 'package:rusa/models/reservation_model.dart';
+import 'package:rusa/models/destination_model.dart';
+import 'package:rusa/models/bus_model.dart';
+import 'package:rusa/models/auth_models.dart';
+import 'package:rusa/models/reservation_with_paiement_response.dart';
+import 'package:rusa/models/reservation_api_model.dart';
 
 class CacheService {
-  static const String _clientKey = 'cached_client';
-  static const String _voyagesKey = 'cached_voyages';
-  static const String _reservationsKey = 'cached_reservations';
-  static const String _destinationsKey = 'cached_destinations';
-  static const String _busesKey = 'cached_buses';
-  static const String _authResponseKey = 'cached_auth_response';
-  static const String _reservationWithPaiementKey = 'cached_reservation_with_paiement';
+  static const String _clientBox = 'clientBox';
+  static const String _voyagesBox = 'voyagesBox';
+  static const String _reservationsBox = 'reservationsBox';
+  static const String _destinationsBox = 'destinationsBox';
+  static const String _busesBox = 'busesBox';
+  static const String _authResponseBox = 'authResponseBox';
+  static const String _reservationWithPaiementBox =
+      'reservationWithPaiementBox';
 
-  // Durée de cache en secondes (1 heure par défaut)
-  static const int _defaultCacheDuration = 3600;
+  static Future<void> init() async {
+    try {
+      // Vérifier que Hive est initialisé
+      if (!Hive.isAdapterRegistered(0)) {
+        debugPrint(
+          'HIVE: Les adaptateurs ne sont pas enregistrés. Veuillez appeler registerHiveAdapters() d\'abord.',
+        );
+        return;
+      }
 
-  // Sauvegarder un ClientModel
+      // Ouvrir les boîtes avec récupération automatique si cache corrompu.
+      await _openBoxWithRecovery<ClientModel>(_clientBox);
+      await _openBoxWithRecovery(_voyagesBox);
+      await _openBoxWithRecovery(_reservationsBox);
+      await _openBoxWithRecovery(_destinationsBox);
+      await _openBoxWithRecovery(_busesBox);
+      await _openBoxWithRecovery<AuthResponse>(_authResponseBox);
+      await _openBoxWithRecovery<ReservationWithPaiementResponse>(
+        _reservationWithPaiementBox,
+      );
+
+      debugPrint('HIVE: Initialisation terminée');
+    } catch (e) {
+      debugPrint('HIVE ERREUR: $e');
+    }
+  }
+
+  static Future<void> _openBoxWithRecovery<T>(String boxName) async {
+    if (Hive.isBoxOpen(boxName)) return;
+    try {
+      if (T == dynamic) {
+        await Hive.openBox(boxName);
+      } else {
+        await Hive.openBox<T>(boxName);
+      }
+    } catch (e) {
+      debugPrint('HIVE: Box "$boxName" corrompue, recréation... ($e)');
+      try {
+        await Hive.deleteBoxFromDisk(boxName);
+      } catch (_) {
+        // Ignorer: la box peut déjà être fermée/inexistante.
+      }
+      if (T == dynamic) {
+        await Hive.openBox(boxName);
+      } else {
+        await Hive.openBox<T>(boxName);
+      }
+      debugPrint('HIVE: Box "$boxName" recréée avec succès');
+    }
+  }
+
   static Future<void> saveClient(ClientModel client) async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final clientJson = client.toJson();
-      final cacheData = {
-        'data': clientJson,
-        'timestamp': DateTime.now().millisecondsSinceEpoch,
-      };
-      await prefs.setString(_clientKey, jsonEncode(cacheData));
-      debugPrint('Client mis en cache: ${client.id}');
+      final box = await Hive.openBox<ClientModel>(_clientBox);
+      await box.put('client', client);
+      debugPrint(
+        'HIVE: Client sauvegardé (id=${client.id}, clientId=${client.clientId})',
+      );
     } catch (e) {
-      debugPrint('Erreur lors de la mise en cache du client: $e');
+      debugPrint('HIVE ERREUR: $e');
     }
   }
 
-  // Récupérer un ClientModel
   static Future<ClientModel?> getClient() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final cacheString = prefs.getString(_clientKey);
-      
-      if (cacheString == null) return null;
-      
-      final cacheData = jsonDecode(cacheString);
-      final timestamp = cacheData['timestamp'] as int;
-      
-      // Vérifier si le cache est expiré
-      if (_isCacheExpired(timestamp)) {
-        await prefs.remove(_clientKey);
-        return null;
-      }
-      
-      return ClientModel.fromJson(cacheData['data']);
+      final box = await Hive.openBox<ClientModel>(_clientBox);
+      return box.get('client');
     } catch (e) {
-      debugPrint('Erreur lors de la récupération du client depuis le cache: $e');
       return null;
     }
   }
 
-  // Sauvegarder une liste de VoyageModel
   static Future<void> saveVoyages(List<Voyage> voyages) async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final voyagesJson = voyages.map((v) => v.toJson()).toList();
-      final cacheData = {
-        'data': voyagesJson,
-        'timestamp': DateTime.now().millisecondsSinceEpoch,
-      };
-      await prefs.setString(_voyagesKey, jsonEncode(cacheData));
-      debugPrint('${voyages.length} voyages mis en cache');
+      final box = await Hive.openBox(_voyagesBox);
+      final jsonList = voyages.map((v) => v.toJson()).toList();
+      await box.put('voyages', jsonEncode(jsonList));
+      debugPrint('HIVE: ${voyages.length} voyages sauvegardés');
     } catch (e) {
-      debugPrint('Erreur lors de la mise en cache des voyages: $e');
+      debugPrint('HIVE ERREUR: $e');
     }
   }
 
-  // Récupérer une liste de VoyageModel
   static Future<List<Voyage>?> getVoyages() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final cacheString = prefs.getString(_voyagesKey);
-      
-      if (cacheString == null) return null;
-      
-      final cacheData = jsonDecode(cacheString);
-      final timestamp = cacheData['timestamp'] as int;
-      
-      // Vérifier si le cache est expiré
-      if (_isCacheExpired(timestamp)) {
-        await prefs.remove(_voyagesKey);
-        return null;
+      final box = await Hive.openBox(_voyagesBox);
+      final jsonString = box.get('voyages');
+      if (jsonString != null) {
+        final List<dynamic> jsonList = jsonDecode(jsonString);
+        return jsonList.map((j) => Voyage.fromJson(j)).toList();
       }
-      
-      final voyagesJson = cacheData['data'] as List;
-      return voyagesJson.map((v) => Voyage.fromJson(v)).toList();
+      return null;
     } catch (e) {
-      debugPrint('Erreur lors de la récupération des voyages depuis le cache: $e');
       return null;
     }
   }
 
-  // Sauvegarder une liste de ReservationModel
-  static Future<void> saveReservations(List<ReservationModel> reservations) async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final reservationsJson = reservations.map((r) => r.toJson()).toList();
-      final cacheData = {
-        'data': reservationsJson,
-        'timestamp': DateTime.now().millisecondsSinceEpoch,
-      };
-      await prefs.setString(_reservationsKey, jsonEncode(cacheData));
-      debugPrint('${reservations.length} réservations mises en cache');
-    } catch (e) {
-      debugPrint('Erreur lors de la mise en cache des réservations: $e');
-    }
-  }
-
-  // Récupérer une liste de ReservationModel
-  static Future<List<ReservationModel>?> getReservations() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final cacheString = prefs.getString(_reservationsKey);
-      
-      if (cacheString == null) return null;
-      
-      final cacheData = jsonDecode(cacheString);
-      final timestamp = cacheData['timestamp'] as int;
-      
-      // Vérifier si le cache est expiré
-      if (_isCacheExpired(timestamp)) {
-        await prefs.remove(_reservationsKey);
-        return null;
-      }
-      
-      final reservationsJson = cacheData['data'] as List;
-      return reservationsJson.map((r) => ReservationModel.fromJson(r)).toList();
-    } catch (e) {
-      debugPrint('Erreur lors de la récupération des réservations depuis le cache: $e');
-      return null;
-    }
-  }
-
-  // Sauvegarder une liste de DestinationModel
-  static Future<void> saveDestinations(List<Destination> destinations) async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final destinationsJson = destinations.map((d) => d.toJson()).toList();
-      final cacheData = {
-        'data': destinationsJson,
-        'timestamp': DateTime.now().millisecondsSinceEpoch,
-      };
-      await prefs.setString(_destinationsKey, jsonEncode(cacheData));
-      debugPrint('${destinations.length} destinations mises en cache');
-    } catch (e) {
-      debugPrint('Erreur lors de la mise en cache des destinations: $e');
-    }
-  }
-
-  // Récupérer une liste de DestinationModel
-  static Future<List<Destination>?> getDestinations() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final cacheString = prefs.getString(_destinationsKey);
-      
-      if (cacheString == null) return null;
-      
-      final cacheData = jsonDecode(cacheString);
-      final timestamp = cacheData['timestamp'] as int;
-      
-      // Vérifier si le cache est expiré
-      if (_isCacheExpired(timestamp)) {
-        await prefs.remove(_destinationsKey);
-        return null;
-      }
-      
-      final destinationsJson = cacheData['data'] as List;
-      return destinationsJson.map((d) => Destination.fromJson(d)).toList();
-    } catch (e) {
-      debugPrint('Erreur lors de la récupération des destinations depuis le cache: $e');
-      return null;
-    }
-  }
-
-  // Sauvegarder une liste de BusModel
-  static Future<void> saveBuses(List<Bus> buses) async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final busesJson = buses.map((b) => b.toJson()).toList();
-      final cacheData = {
-        'data': busesJson,
-        'timestamp': DateTime.now().millisecondsSinceEpoch,
-      };
-      await prefs.setString(_busesKey, jsonEncode(cacheData));
-      debugPrint('${buses.length} bus mis en cache');
-    } catch (e) {
-      debugPrint('Erreur lors de la mise en cache des bus: $e');
-    }
-  }
-
-  // Récupérer une liste de BusModel
-  static Future<List<Bus>?> getBuses() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final cacheString = prefs.getString(_busesKey);
-      
-      if (cacheString == null) return null;
-      
-      final cacheData = jsonDecode(cacheString);
-      final timestamp = cacheData['timestamp'] as int;
-      
-      // Vérifier si le cache est expiré
-      if (_isCacheExpired(timestamp)) {
-        await prefs.remove(_busesKey);
-        return null;
-      }
-      
-      final busesJson = cacheData['data'] as List;
-      return busesJson.map((b) => Bus.fromJson(b)).toList();
-    } catch (e) {
-      debugPrint('Erreur lors de la récupération des bus depuis le cache: $e');
-      return null;
-    }
-  }
-
-  // Sauvegarder AuthResponse
   static Future<void> saveAuthResponse(AuthResponse authResponse) async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final authJson = authResponse.toJson();
-      final cacheData = {
-        'data': authJson,
-        'timestamp': DateTime.now().millisecondsSinceEpoch,
-      };
-      await prefs.setString(_authResponseKey, jsonEncode(cacheData));
-      debugPrint('AuthResponse mis en cache');
+      final box = await Hive.openBox<AuthResponse>(_authResponseBox);
+      await box.put('auth', authResponse);
+      debugPrint('HIVE: AuthResponse sauvegardée');
     } catch (e) {
-      debugPrint('Erreur lors de la mise en cache de AuthResponse: $e');
+      debugPrint('HIVE ERREUR: $e');
     }
   }
 
-  // Récupérer AuthResponse
   static Future<AuthResponse?> getAuthResponse() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final cacheString = prefs.getString(_authResponseKey);
-      
-      if (cacheString == null) return null;
-      
-      final cacheData = jsonDecode(cacheString);
-      final timestamp = cacheData['timestamp'] as int;
-      
-      // Vérifier si le cache est expiré
-      if (_isCacheExpired(timestamp)) {
-        await prefs.remove(_authResponseKey);
-        return null;
-      }
-      
-      return AuthResponse.fromJson(cacheData['data']);
-    } catch (e) {
-      debugPrint('Erreur lors de la récupération de AuthResponse depuis le cache: $e');
-      return null;
-    }
-  }
-
-  // Sauvegarder ReservationWithPaiementResponse
-  static Future<void> saveReservationWithPaiement(ReservationWithPaiementResponse response) async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final responseJson = response.toJson();
-      final cacheData = {
-        'data': responseJson,
-        'timestamp': DateTime.now().millisecondsSinceEpoch,
-      };
-      await prefs.setString(_reservationWithPaiementKey, jsonEncode(cacheData));
-      debugPrint('ReservationWithPaiementResponse mise en cache: ${response.reservation.idReservation}');
-    } catch (e) {
-      debugPrint('Erreur lors de la mise en cache de ReservationWithPaiementResponse: $e');
-    }
-  }
-
-  // Récupérer ReservationWithPaiementResponse
-  static Future<ReservationWithPaiementResponse?> getReservationWithPaiement() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final cacheString = prefs.getString(_reservationWithPaiementKey);
-      
-      if (cacheString == null) return null;
-      
-      final cacheData = jsonDecode(cacheString);
-      final timestamp = cacheData['timestamp'] as int;
-      
-      // Vérifier si le cache est expiré
-      if (_isCacheExpired(timestamp)) {
-        await prefs.remove(_reservationWithPaiementKey);
-        return null;
-      }
-      
-      return ReservationWithPaiementResponse.fromJson(cacheData['data']);
-    } catch (e) {
-      debugPrint('Erreur lors de la récupération de ReservationWithPaiementResponse depuis le cache: $e');
-      return null;
-    }
-  }
-
-  // Vérifier si le cache est expiré
-  static bool _isCacheExpired(int timestamp) {
-    final now = DateTime.now().millisecondsSinceEpoch;
-    final age = now - timestamp;
-    return age > (_defaultCacheDuration * 1000);
-  }
-
-  // Vider tout le cache
-  static Future<void> clearCache() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await Future.wait([
-        prefs.remove(_clientKey),
-        prefs.remove(_voyagesKey),
-        prefs.remove(_reservationsKey),
-        prefs.remove(_destinationsKey),
-        prefs.remove(_busesKey),
-        prefs.remove(_authResponseKey),
-        prefs.remove(_reservationWithPaiementKey),
-      ]);
-      debugPrint('Cache vidé avec succès');
-    } catch (e) {
-      debugPrint('Erreur lors du vidage du cache: $e');
-    }
-  }
-
-  // Vider une clé spécifique du cache
-  static Future<void> clearCacheKey(String key) async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.remove(key);
-      debugPrint('Cache clé $key vidée avec succès');
-    } catch (e) {
-      debugPrint('Erreur lors du vidage de la clé $key du cache: $e');
-    }
-  }
-
-  // Obtenir la taille du cache (approximative)
-  static Future<int> getCacheSize() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final keys = [
-        _clientKey,
-        _voyagesKey,
-        _reservationsKey,
-        _destinationsKey,
-        _busesKey,
-        _authResponseKey,
-        _reservationWithPaiementKey,
-      ];
-      
-      int totalSize = 0;
-      for (final key in keys) {
-        final value = prefs.getString(key);
-        if (value != null) {
-          totalSize += value.length;
+      final box = await Hive.openBox<AuthResponse>(_authResponseBox);
+      final auth = box.get('auth');
+      if (auth != null) {
+        // Check for client_id mismatch and auto-correct
+        final utilisateurClientId = auth.utilisateur.idClient;
+        final clientId = auth.client.idClient;
+        
+        if (utilisateurClientId != null && 
+            utilisateurClientId > 0 && 
+            utilisateurClientId != clientId) {
+          debugPrint('⚠️ AuthResponse cache: client_id mismatch detected');
+          debugPrint('   client.idClient=$clientId, utilisateur.idClient=$utilisateurClientId');
+          debugPrint('   Correcting client.idClient to $utilisateurClientId');
+          
+          // Create corrected copy
+          final corrected = AuthResponse(
+            success: auth.success,
+            message: auth.message,
+            accessToken: auth.accessToken,
+            refreshToken: auth.refreshToken,
+            tokenType: auth.tokenType,
+            expiresIn: auth.expiresIn,
+            expiresAt: auth.expiresAt,
+            utilisateur: auth.utilisateur,
+            doitChangerMotDePasse: auth.doitChangerMotDePasse,
+            nomRole: auth.nomRole,
+            nomSociete: auth.nomSociete,
+            acceptNotification: auth.acceptNotification,
+            permissions: auth.permissions,
+            roles: auth.roles,
+            primaryRole: auth.primaryRole,
+            client: Client(
+              idClient: utilisateurClientId,
+              nomClient: auth.client.nomClient,
+              codeCons: auth.client.codeCons,
+              telephone: auth.client.telephone,
+              emailClient: auth.client.emailClient,
+              genreClient: auth.client.genreClient,
+              adresseClient: auth.client.adresseClient,
+              statut: auth.client.statut,
+              isActif: auth.client.isActif,
+              idAxe: auth.client.idAxe,
+              usages: auth.client.usages,
+              usagesCount: auth.client.usagesCount,
+            ),
+            agent: auth.agent,
+          );
+          await box.put('auth', corrected);
+          debugPrint('✅ AuthResponse corrected in Hive cache');
+          return corrected;
         }
       }
-      
-      return totalSize;
+      return auth;
     } catch (e) {
-      debugPrint('Erreur lors du calcul de la taille du cache: $e');
-      return 0;
+      debugPrint('HIVE ERREUR getAuthResponse: $e');
+      return null;
+    }
+  }
+
+  static Future<void> saveReservations(
+    List<ReservationModel> reservations,
+  ) async {
+    try {
+      final box = await Hive.openBox(_reservationsBox);
+      final jsonList = reservations.map((r) => r.toJson()).toList();
+      await box.put('reservations', jsonEncode(jsonList));
+      debugPrint('HIVE: ${reservations.length} réservations sauvegardées');
+    } catch (e) {
+      debugPrint('HIVE ERREUR: $e');
+    }
+  }
+
+  static Future<List<ReservationModel>?> getReservations() async {
+    try {
+      final box = await Hive.openBox(_reservationsBox);
+      final jsonString = box.get('reservations');
+      if (jsonString != null) {
+        final List<dynamic> jsonList = jsonDecode(jsonString);
+        return jsonList.map((j) => ReservationModel.fromJson(j)).toList();
+      }
+      return null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  static Future<void> saveClientReservations(
+    int clientId,
+    List<Reservation> reservations,
+  ) async {
+    try {
+      final box = await Hive.openBox(_reservationsBox);
+      final jsonList = reservations.map((r) => r.toJson()).toList();
+      await box.put('client_reservations_$clientId', jsonEncode(jsonList));
+      debugPrint(
+        'HIVE: ${reservations.length} réservations client sauvegardées (clientId=$clientId)',
+      );
+    } catch (e) {
+      debugPrint('HIVE ERREUR: $e');
+    }
+  }
+
+  static Future<List<Reservation>?> getClientReservations(int clientId) async {
+    try {
+      final box = await Hive.openBox(_reservationsBox);
+      final jsonString = box.get('client_reservations_$clientId');
+      if (jsonString != null) {
+        final List<dynamic> jsonList = jsonDecode(jsonString);
+        return jsonList.map((j) => Reservation.fromJson(j)).toList();
+      }
+      return null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  static Future<void> saveDestinations(List<Destination> destinations) async {
+    try {
+      final box = await Hive.openBox(_destinationsBox);
+      final jsonList = destinations.map((d) => d.toJson()).toList();
+      await box.put('destinations', jsonEncode(jsonList));
+      debugPrint('HIVE: ${destinations.length} destinations sauvegardées');
+    } catch (e) {
+      debugPrint('HIVE ERREUR: $e');
+    }
+  }
+
+  static Future<List<Destination>?> getDestinations() async {
+    try {
+      final box = await Hive.openBox(_destinationsBox);
+      final jsonString = box.get('destinations');
+      if (jsonString != null) {
+        final List<dynamic> jsonList = jsonDecode(jsonString);
+        return jsonList.map((j) => Destination.fromJson(j)).toList();
+      }
+      return null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  static Future<void> saveBuses(List<Bus> buses) async {
+    try {
+      final box = await Hive.openBox(_busesBox);
+      final jsonList = buses.map((b) => b.toJson()).toList();
+      await box.put('buses', jsonEncode(jsonList));
+      debugPrint('HIVE: ${buses.length} bus sauvegardés');
+    } catch (e) {
+      debugPrint('HIVE ERREUR: $e');
+    }
+  }
+
+  static Future<List<Bus>?> getBuses() async {
+    try {
+      final box = await Hive.openBox(_busesBox);
+      final jsonString = box.get('buses');
+      if (jsonString != null) {
+        final List<dynamic> jsonList = jsonDecode(jsonString);
+        return jsonList.map((j) => Bus.fromJson(j)).toList();
+      }
+      return null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  static Future<void> saveReservationWithPaiement(
+    ReservationWithPaiementResponse response,
+  ) async {
+    try {
+      final box = await Hive.openBox<ReservationWithPaiementResponse>(
+        _reservationWithPaiementBox,
+      );
+      await box.put('reservation_with_paiement', response);
+      debugPrint('HIVE: ReservationWithPaiement sauvegardée');
+    } catch (e) {
+      debugPrint('HIVE ERREUR: $e');
+    }
+  }
+
+  static Future<ReservationWithPaiementResponse?>
+  getReservationWithPaiement() async {
+    try {
+      final box = await Hive.openBox<ReservationWithPaiementResponse>(
+        _reservationWithPaiementBox,
+      );
+      return box.get('reservation_with_paiement');
+    } catch (e) {
+      return null;
+    }
+  }
+
+  static Future<void> clearCache() async {
+    try {
+      // Vider complètement toutes les boîtes Hive
+      await Hive.deleteBoxFromDisk(_clientBox);
+      await Hive.deleteBoxFromDisk(_voyagesBox);
+      await Hive.deleteBoxFromDisk(_reservationsBox);
+      await Hive.deleteBoxFromDisk(_destinationsBox);
+      await Hive.deleteBoxFromDisk(_busesBox);
+      await Hive.deleteBoxFromDisk(_authResponseBox);
+      await Hive.deleteBoxFromDisk(_reservationWithPaiementBox);
+
+      // Fermer toutes les boîtes ouvertes
+      await Hive.close();
+
+      debugPrint('HIVE: Cache vidé complètement');
+    } catch (e) {
+      debugPrint('HIVE ERREUR: $e');
+    }
+  }
+
+  static Future<void> debugPrintCacheStatus() async {
+    try {
+      debugPrint('\n========== HIVE CACHE STATUS ==========');
+      final client = await getClient();
+      if (client != null) {
+        debugPrint('CLIENT: id=${client.id}, clientId=${client.clientId}');
+      } else {
+        debugPrint('CLIENT: null');
+      }
+      final voyages = await getVoyages();
+      if (voyages != null) {
+        debugPrint('VOYAGES: ${voyages.length} items');
+        for (final v in voyages) {
+          debugPrint('  - ${v.id}: ${v.villeDepart} -> ${v.villeArrivee}');
+        }
+      } else {
+        debugPrint('VOYAGES: null');
+      }
+      final auth = await getAuthResponse();
+      if (auth != null) {
+        debugPrint('AUTH: ${auth.utilisateur.nomComplet}');
+      } else {
+        debugPrint('AUTH: null');
+      }
+      debugPrint('=======================================\n');
+    } catch (e) {
+      debugPrint('HIVE DEBUG: $e');
     }
   }
 }

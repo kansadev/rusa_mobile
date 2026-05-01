@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:rusa/models/auth_models.dart';
-import 'package:rusa/screens/client/AcceuilScreen.dart';
 import 'package:rusa/screens/auth/RegisterPage.dart';
+import 'package:rusa/screens/auth/UnsupportedRoleScreen.dart';
 import 'package:rusa/services/api_service.dart';
 import 'package:rusa/services/session_service.dart';
+import 'package:rusa/widgets/CaissierNavigationWrapper.dart';
 import 'package:rusa/widgets/MyNavigationWrapper.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -14,6 +15,11 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
+  bool _isCaissierRole(String? role) {
+    final value = role?.toLowerCase() ?? '';
+    return value.contains('caiss');
+  }
+
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _isLoading = false;
@@ -78,13 +84,14 @@ class _LoginScreenState extends State<LoginScreen> {
         debugPrint('  - Email: ${authResponse.utilisateur.email}');
         debugPrint('  - Téléphone: ${authResponse.utilisateur.telephone}');
         debugPrint('  - Genre: ${authResponse.utilisateur.genre}');
-        debugPrint('  - ID Client: ${authResponse.client.idClient}');
-        debugPrint('  - Nom Client: ${authResponse.client.nomClient}');
-        debugPrint('  - Email Client: ${authResponse.client.emailClient}');
-        debugPrint('  - Téléphone Client: ${authResponse.client.telephone}');
+        debugPrint('  - ID Client effectif: ${authResponse.effectiveClientId}');
+        debugPrint('  - Profil client présent: ${authResponse.hasClientProfile}');
+        debugPrint('  - Profil agent présent: ${authResponse.hasAgentProfile}');
 
         // Sauvegarder les données d'authentification
         await _saveAuthData(authResponse);
+
+        final effectiveClientId = authResponse.effectiveClientId;
 
         // Connexion réussie
         ScaffoldMessenger.of(context).showSnackBar(
@@ -94,12 +101,29 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
         );
         if (mounted) {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(
-              builder: (context) => const MyNavigationWrapper(),
-            ),
-          );
+          if (_isCaissierRole(authResponse.nomRole)) {
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(
+                builder: (context) => const CaissierNavigationWrapper(),
+              ),
+            );
+          } else if (effectiveClientId > 0) {
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(
+                builder: (context) => const MyNavigationWrapper(),
+              ),
+            );
+          } else {
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(
+                builder: (context) =>
+                    UnsupportedRoleScreen(roleName: authResponse.nomRole),
+              ),
+            );
+          }
         }
       } else {
         if (mounted) {

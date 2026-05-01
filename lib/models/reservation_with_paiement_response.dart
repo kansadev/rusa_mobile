@@ -1,7 +1,7 @@
 class ReservationWithPaiementResponse {
   final ReservationData reservation;
   final PaiementData paiement;
-  final BilletData billet;
+  final BilletData? billet;
   final String transactionId;
   final String statut;
   final String message;
@@ -10,7 +10,7 @@ class ReservationWithPaiementResponse {
   ReservationWithPaiementResponse({
     required this.reservation,
     required this.paiement,
-    required this.billet,
+    this.billet,
     required this.transactionId,
     required this.statut,
     required this.message,
@@ -21,7 +21,9 @@ class ReservationWithPaiementResponse {
     return ReservationWithPaiementResponse(
       reservation: ReservationData.fromJson(json['reservation']),
       paiement: PaiementData.fromJson(json['paiement']),
-      billet: BilletData.fromJson(json['billet']),
+      billet: json['billet'] != null
+          ? BilletData.fromJson(json['billet'] as Map<String, dynamic>)
+          : null,
       transactionId: json['transactionId'] ?? '',
       statut: json['statut'] ?? '',
       message: json['message'] ?? '',
@@ -33,7 +35,7 @@ class ReservationWithPaiementResponse {
     return {
       'reservation': reservation.toJson(),
       'paiement': paiement.toJson(),
-      'billet': billet.toJson(),
+      'billet': billet?.toJson(),
       'transactionId': transactionId,
       'statut': statut,
       'message': message,
@@ -52,18 +54,18 @@ class ReservationData {
   final String dateReservation;
   final int idSociete;
   final String dateCreation;
-  final String dateModification;
-  final String nomUtilisateur;
-  final String emailUtilisateur;
-  final String nomClient;
-  final String prenomClient;
-  final String telephoneClient;
-  final String dateVoyage;
-  final HeureVoyage heureVoyage;
-  final double prixVoyage;
-  final String numeroBus;
-  final String villeDepart;
-  final String villeArrivee;
+  final String? dateModification;
+  final String? nomUtilisateur;
+  final String? emailUtilisateur;
+  final String? nomClient;
+  final String? prenomClient;
+  final String? telephoneClient;
+  final String? dateVoyage;
+  final HeureVoyage? heureVoyage;
+  final double? prixVoyage;
+  final String? numeroBus;
+  final String? villeDepart;
+  final String? villeArrivee;
 
   ReservationData({
     required this.idReservation,
@@ -75,18 +77,18 @@ class ReservationData {
     required this.dateReservation,
     required this.idSociete,
     required this.dateCreation,
-    required this.dateModification,
-    required this.nomUtilisateur,
-    required this.emailUtilisateur,
-    required this.nomClient,
-    required this.prenomClient,
-    required this.telephoneClient,
-    required this.dateVoyage,
-    required this.heureVoyage,
-    required this.prixVoyage,
-    required this.numeroBus,
-    required this.villeDepart,
-    required this.villeArrivee,
+    this.dateModification,
+    this.nomUtilisateur,
+    this.emailUtilisateur,
+    this.nomClient,
+    this.prenomClient,
+    this.telephoneClient,
+    this.dateVoyage,
+    this.heureVoyage,
+    this.prixVoyage,
+    this.numeroBus,
+    this.villeDepart,
+    this.villeArrivee,
   });
 
   factory ReservationData.fromJson(Map<String, dynamic> json) {
@@ -100,19 +102,46 @@ class ReservationData {
       dateReservation: json['dateReservation'] ?? '',
       idSociete: json['idSociete'] ?? 0,
       dateCreation: json['dateCreation'] ?? '',
-      dateModification: json['dateModification'] ?? '',
-      nomUtilisateur: json['nomUtilisateur'] ?? '',
-      emailUtilisateur: json['emailUtilisateur'] ?? '',
-      nomClient: json['nomClient'] ?? '',
-      prenomClient: json['prenomClient'] ?? '',
-      telephoneClient: json['telephoneClient'] ?? '',
-      dateVoyage: json['dateVoyage'] ?? '',
-      heureVoyage: HeureVoyage.fromJson(json['heureVoyage'] ?? {}),
-      prixVoyage: (json['prixVoyage'] ?? 0).toDouble(),
-      numeroBus: json['numeroBus'] ?? '',
-      villeDepart: json['villeDepart'] ?? '',
-      villeArrivee: json['villeArrivee'] ?? '',
+      dateModification: json['dateModification'] as String?,
+      nomUtilisateur: json['nomUtilisateur'] as String?,
+      emailUtilisateur: json['emailUtilisateur'] as String?,
+      nomClient: json['nomClient'] as String?,
+      prenomClient: json['prenomClient'] as String?,
+      telephoneClient: json['telephoneClient'] as String?,
+      dateVoyage: json['dateVoyage'] as String?,
+      heureVoyage: _parseHeureVoyage(json['heureVoyage']),
+      prixVoyage: json['prixVoyage'] != null ? (json['prixVoyage']).toDouble() : null,
+      numeroBus: json['numeroBus'] as String?,
+      villeDepart: json['villeDepart'] as String?,
+      villeArrivee: json['villeArrivee'] as String?,
     );
+  }
+
+  static HeureVoyage? _parseHeureVoyage(dynamic value) {
+    if (value == null) return null;
+    if (value is String) {
+      final parts = value.split(':');
+      if (parts.length >= 2) {
+        return HeureVoyage(
+          ticks: 0,
+          days: 0,
+          hours: int.tryParse(parts[0]) ?? 0,
+          milliseconds: 0,
+          minutes: int.tryParse(parts[1]) ?? 0,
+          seconds: parts.length >= 3 ? int.tryParse(parts[2]) ?? 0 : 0,
+          totalDays: 0,
+          totalHours: 0,
+          totalMilliseconds: 0,
+          totalMinutes: 0,
+          totalSeconds: 0,
+        );
+      }
+      return null;
+    }
+    if (value is Map<String, dynamic>) {
+      return HeureVoyage.fromJson(value);
+    }
+    return null;
   }
 
   Map<String, dynamic> toJson() {
@@ -133,7 +162,7 @@ class ReservationData {
       'prenomClient': prenomClient,
       'telephoneClient': telephoneClient,
       'dateVoyage': dateVoyage,
-      'heureVoyage': heureVoyage.toJson(),
+      'heureVoyage': heureVoyage?.toJson(),
       'prixVoyage': prixVoyage,
       'numeroBus': numeroBus,
       'villeDepart': villeDepart,

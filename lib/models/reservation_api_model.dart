@@ -11,9 +11,9 @@ class Reservation {
   final String? dateModification;
   final String nomUtilisateur;
   final String emailUtilisateur;
-  final String nomClient;
-  final String prenomClient;
-  final String telephoneClient;
+  final String? nomClient;
+  final String? prenomClient;
+  final String? telephoneClient;
   final String dateVoyage;
   final TimeOfDay heureVoyage;
   final double prixVoyage;
@@ -34,9 +34,9 @@ class Reservation {
     this.dateModification,
     required this.nomUtilisateur,
     required this.emailUtilisateur,
-    required this.nomClient,
-    required this.prenomClient,
-    required this.telephoneClient,
+    this.nomClient,
+    this.prenomClient,
+    this.telephoneClient,
     required this.dateVoyage,
     required this.heureVoyage,
     required this.prixVoyage,
@@ -59,15 +59,51 @@ class Reservation {
       dateModification: json['dateModification'],
       nomUtilisateur: json['nomUtilisateur'] ?? '',
       emailUtilisateur: json['emailUtilisateur'] ?? '',
-      nomClient: json['nomClient'] ?? '',
-      prenomClient: json['prenomClient'] ?? '',
-      telephoneClient: json['telephoneClient'] ?? '',
+      nomClient: json['nomClient'] as String?,
+      prenomClient: json['prenomClient'] as String?,
+      telephoneClient: json['telephoneClient'] as String?,
       dateVoyage: json['dateVoyage'] ?? '',
-      heureVoyage: TimeOfDay.fromJson(json['heureVoyage'] ?? {}),
+      heureVoyage: _parseHeureVoyage(json['heureVoyage']),
       prixVoyage: (json['prixVoyage'] ?? 0).toDouble(),
       numeroBus: json['numeroBus'] ?? '',
       villeDepart: json['villeDepart'] ?? '',
       villeArrivee: json['villeArrivee'] ?? '',
+    );
+  }
+
+  static TimeOfDay _parseHeureVoyage(dynamic heureVoyage) {
+    if (heureVoyage is String) {
+      final parts = heureVoyage.split(':');
+      if (parts.length >= 2) {
+        return TimeOfDay(
+          ticks: 0,
+          days: 0,
+          hours: int.tryParse(parts[0]) ?? 0,
+          milliseconds: 0,
+          minutes: int.tryParse(parts[1]) ?? 0,
+          seconds: parts.length >= 3 ? int.tryParse(parts[2]) ?? 0 : 0,
+          totalDays: 0,
+          totalHours: 0,
+          totalMilliseconds: 0,
+          totalMinutes: 0,
+          totalSeconds: 0,
+        );
+      }
+    } else if (heureVoyage is Map<String, dynamic>) {
+      return TimeOfDay.fromJson(heureVoyage);
+    }
+    return  TimeOfDay(
+      ticks: 0,
+      days: 0,
+      hours: 0,
+      milliseconds: 0,
+      minutes: 0,
+      seconds: 0,
+      totalDays: 0,
+      totalHours: 0,
+      totalMilliseconds: 0,
+      totalMinutes: 0,
+      totalSeconds: 0,
     );
   }
 
@@ -98,7 +134,21 @@ class Reservation {
   }
 
   // Getters pour faciliter l'accès aux données
-  String get clientFullName => '$prenomClient $nomClient';
+  String get clientFullName {
+    final fullName = [prenomClient, nomClient]
+        .whereType<String>()
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .join(' ')
+        .trim();
+    if (fullName.isNotEmpty) return fullName;
+    return nomUtilisateur.trim().isNotEmpty ? nomUtilisateur : 'Client';
+  }
+
+  String get clientPhoneSafe {
+    final phone = telephoneClient?.trim() ?? '';
+    return phone.isNotEmpty ? phone : '-';
+  }
   String get route => '$villeDepart - $villeArrivee';
   String get formattedPrice => '${prixVoyage.toStringAsFixed(0)} FC';
   String get formattedDate => _formatDate(dateVoyage);

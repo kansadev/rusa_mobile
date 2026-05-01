@@ -2,24 +2,24 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
-import 'package:rusa/models/client_model.dart';
-import 'package:rusa/screens/client/ClientContactsScreen.dart';
-import 'package:rusa/services/session_service.dart';
-import 'package:rusa/services/cache_service.dart';
+import 'package:rusa/models/auth_models.dart';
+import 'package:rusa/screens/ProfileImageViewScreen.dart';
 import 'package:rusa/screens/auth/LoginScreen.dart';
+import 'package:rusa/services/cache_service.dart';
+import 'package:rusa/services/session_service.dart';
 
-class ProfileScreen extends StatefulWidget {
-  const ProfileScreen({super.key});
+/// Profil caissier / agent : même structure que [ProfileScreen], données issues de [AuthResponse].
+class CaissierProfileScreen extends StatefulWidget {
+  const CaissierProfileScreen({super.key});
 
   @override
-  State<ProfileScreen> createState() => _ProfileScreenState();
+  State<CaissierProfileScreen> createState() => _CaissierProfileScreenState();
 }
 
-class _ProfileScreenState extends State<ProfileScreen> {
-  ClientModel? _client;
-  bool _isLoading = false;
+class _CaissierProfileScreenState extends State<CaissierProfileScreen> {
+  AuthResponse? _auth;
+  bool _isLoading = true;
 
-  // États pour les interrupteurs (Switches)
   bool _pauseNotifications = true;
   bool _darkMode = false;
 
@@ -42,94 +42,54 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
+  String? _effectivePhotoUrl(AuthResponse auth) {
+    final u = auth.utilisateur.photoUrl?.trim() ?? '';
+    if (u.isNotEmpty) return auth.utilisateur.photoUrl;
+    final a = auth.agent?.photoUrl?.trim() ?? '';
+    if (a.isNotEmpty) return auth.agent!.photoUrl;
+    return null;
+  }
+
+  String _displayName(AuthResponse auth) {
+    final n = auth.utilisateur.nomComplet.trim();
+    if (n.isNotEmpty) return n;
+    final an = auth.agent?.nomComplet.trim() ?? '';
+    if (an.isNotEmpty) return an;
+    return auth.nomRole.trim().isNotEmpty ? auth.nomRole : 'Utilisateur';
+  }
+
+  String _displayEmail(AuthResponse auth) {
+    final e = auth.utilisateur.email.trim();
+    if (e.isNotEmpty) return e;
+    return auth.agent?.emailAgent?.trim() ?? '';
+  }
+
   @override
   void initState() {
     super.initState();
-    // Charger les données en arrière-plan sans bloquer l'UI
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _loadUserData();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadAuth());
+  }
+
+  Future<void> _loadAuth() async {
+    final auth = await CacheService.getAuthResponse();
+    if (!mounted) return;
+    setState(() {
+      _auth = auth;
+      _isLoading = false;
     });
   }
 
-  Future<void> _loadUserData() async {
-    final cachedAuth = await CacheService.getAuthResponse();
-    if (cachedAuth != null && mounted) {
-      final fullName = cachedAuth.utilisateur.nomComplet.trim();
-      final nameParts = fullName
-          .split(RegExp(r'\s+'))
-          .where((p) => p.isNotEmpty)
-          .toList();
-      final nom = nameParts.isNotEmpty ? nameParts.first : '';
-      final postnom = nameParts.length > 1 ? nameParts.skip(1).join(' ') : '';
-      final username = fullName.isNotEmpty ? fullName : 'Utilisateur';
-
-      setState(() {
-        _client = ClientModel(
-          id: cachedAuth.utilisateur.idUtilisateur,
-          clientId: cachedAuth.effectiveClientId,
-          username: username,
-          email: cachedAuth.utilisateur.email,
-          nom: nom,
-          postnom: postnom,
-          telephone: cachedAuth.utilisateur.telephone,
-          genre: cachedAuth.utilisateur.genre,
-          statut: cachedAuth.utilisateur.statut,
-          dateCreation: DateTime.now().toIso8601String(),
-          idRole: cachedAuth.utilisateur.idRole ?? 6,
-          idSociete: cachedAuth.utilisateur.idSociete,
-          photoUrl: cachedAuth.utilisateur.photoUrl,
-        );
-        _isLoading = false;
-      });
-      return;
-    }
-
-    // Fallback session (sans provoquer de déconnexion automatique)
-    final session = SessionService();
-    final userData = await session.getUserInfo();
-    if (!mounted) return;
-
-    if (userData != null) {
-      final name = userData['name'] ?? '';
-      final nameParts = name
-          .split(RegExp(r'\s+'))
-          .where((p) => p.isNotEmpty)
-          .toList();
-      setState(() {
-        _client = ClientModel(
-          id: int.tryParse(userData['id'] ?? '0') ?? 0,
-          clientId: int.tryParse(userData['client_id'] ?? '0') ?? 0,
-          username: name,
-          email: userData['email'] ?? '',
-          nom: nameParts.isNotEmpty ? nameParts.first : '',
-          postnom: nameParts.length > 1 ? nameParts.skip(1).join(' ') : '',
-          telephone: userData['phone'] ?? '',
-          genre: 'Masculin',
-          statut: true,
-          dateCreation: DateTime.now().toIso8601String(),
-          idRole: 6,
-          idSociete: 1,
-          photoUrl: null,
-        );
-        _isLoading = false;
-      });
-    } else {
-      setState(() => _isLoading = false);
-    }
-  }
-
   Future<void> _logout() async {
-    // Afficher le dialog d'attente
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (context) => Center(
         child: Dialog(
-          backgroundColor: Color(0xFF222222),
+          backgroundColor: const Color(0xFF222222),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(20),
           ),
-          child: Padding(
+          child: const Padding(
             padding: EdgeInsets.all(24),
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -155,9 +115,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       await SessionService().logout();
 
       if (mounted) {
-        // Fermer le dialog d'attente
         Navigator.pop(context);
-
         Navigator.of(context).pushAndRemoveUntil(
           MaterialPageRoute(builder: (context) => const LoginScreen()),
           (route) => false,
@@ -165,9 +123,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       }
     } catch (e) {
       if (mounted) {
-        // Fermer le dialog d'attente
         Navigator.pop(context);
-
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Erreur lors de la déconnexion: $e'),
@@ -178,14 +134,28 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
+  void _openPhotoPreview(AuthResponse auth) {
+    final url = _effectivePhotoUrl(auth);
+    if (url == null || url.trim().isEmpty) return;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ProfileImageViewScreen(
+          imagePath: 'assets/images/profil.jpg',
+          imageUrl: url,
+          userName: _displayName(auth),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    // Couleurs basées sur ton design
     const backgroundColor = Color(0xFF0D0D0D);
     const cardColor = Color(0xFF1A1A1A);
     const textColor = Colors.white;
     const subtitleColor = Colors.white54;
-    const accentGreen = Color(0xFF00E676); // Vert fluo du Switch
+    const accentGreen = Color(0xFF00E676);
 
     return Scaffold(
       backgroundColor: backgroundColor,
@@ -207,14 +177,35 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ? const Center(
               child: CircularProgressIndicator(color: Color(0xFF00E676)),
             )
-          : SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 20.0,
-                vertical: 10.0,
+          : _auth == null
+          ? Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.person_off, color: Colors.white38, size: 48),
+                    const SizedBox(height: 16),
+                    Text(
+                      'Session introuvable.',
+                      style: TextStyle(color: Colors.white.withValues(alpha: 0.7)),
+                    ),
+                    const SizedBox(height: 16),
+                    FilledButton(
+                      onPressed: () {
+                        setState(() => _isLoading = true);
+                        _loadAuth();
+                      },
+                      child: const Text('Réessayer'),
+                    ),
+                  ],
+                ),
               ),
+            )
+          : SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
               child: Column(
                 children: [
-                  // --- CARTE PROFIL ---
                   _buildCard(cardColor, [
                     ListTile(
                       contentPadding: const EdgeInsets.symmetric(
@@ -225,10 +216,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         radius: 24,
                         backgroundColor: const Color(0xFF00E676),
                         backgroundImage: _buildProfileImageProvider(
-                          _client?.photoUrl,
+                          _effectivePhotoUrl(_auth!),
                         ),
-                        child:
-                            _buildProfileImageProvider(_client?.photoUrl) == null
+                        child: _buildProfileImageProvider(
+                                  _effectivePhotoUrl(_auth!),
+                                ) ==
+                                null
                             ? const Icon(
                                 Icons.person,
                                 color: Colors.black,
@@ -237,9 +230,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             : null,
                       ),
                       title: Text(
-                        _client != null
-                            ? '${_client!.nom} ${_client!.postnom}'
-                            : 'Utilisateur',
+                        _displayName(_auth!),
                         style: const TextStyle(
                           color: textColor,
                           fontWeight: FontWeight.bold,
@@ -247,7 +238,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         ),
                       ),
                       subtitle: Text(
-                        _client != null ? '@${_client!.username}' : '@username',
+                        _displayEmail(_auth!).isEmpty
+                            ? _auth!.nomRole
+                            : _displayEmail(_auth!),
                         style: const TextStyle(
                           color: subtitleColor,
                           fontSize: 13,
@@ -257,14 +250,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         Icons.chevron_right,
                         color: subtitleColor,
                       ),
-                      onTap: () {
-                        // Navigation vers l'édition du profil si nécessaire
-                      },
+                      onTap: () => _openPhotoPreview(_auth!),
                     ),
                   ]),
                   const SizedBox(height: 16),
-
-                  // --- GROUPE 1 ---
+                  _buildCard(cardColor, _buildAgentInfoTiles(_auth!, subtitleColor)),
+                  const SizedBox(height: 16),
                   _buildCard(cardColor, [
                     _buildSwitchTile(
                       icon: Icons.notifications_off_outlined,
@@ -281,12 +272,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ),
                   ]),
                   const SizedBox(height: 16),
-
-                  // --- GROUPE 2 ---
                   _buildCard(cardColor, [
                     _buildSwitchTile(
                       icon: Icons.dark_mode_outlined,
-                      title: 'Dark mode',
+                      title: 'Mode sombre',
                       value: _darkMode,
                       activeColor: accentGreen,
                       onChanged: (val) => setState(() => _darkMode = val),
@@ -296,22 +285,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       title: 'Langue',
                       onTap: () {},
                     ),
-                    _buildActionTile(
-                      icon: Icons.people_outline,
-                      title: 'Mes contacts',
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => const ClientContactsScreen(),
-                          ),
-                        );
-                      },
-                    ),
                   ]),
                   const SizedBox(height: 16),
-
-                  // --- GROUPE 3 ---
                   _buildCard(cardColor, [
                     _buildActionTile(
                       icon: Icons.help_outline,
@@ -330,8 +305,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ),
                   ]),
                   const SizedBox(height: 30),
-
-                  // --- BOUTON DÉCONNEXION ---
                   SizedBox(
                     width: double.infinity,
                     height: 55,
@@ -362,7 +335,85 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  // Widget utilitaire pour créer les blocs arrondis (Cartes)
+  List<Widget> _buildAgentInfoTiles(AuthResponse auth, Color subtitleColor) {
+    final agent = auth.agent;
+    final rows = <Widget>[
+      _infoRow(
+        label: 'Rôle',
+        value: auth.nomRole.trim().isEmpty ? '—' : auth.nomRole,
+        subtitleColor: subtitleColor,
+      ),
+      if (auth.nomSociete.trim().isNotEmpty)
+        _infoRow(
+          label: 'Société',
+          value: auth.nomSociete,
+          subtitleColor: subtitleColor,
+        ),
+    ];
+
+    if (agent != null) {
+      final mat = agent.matricule?.trim() ?? '';
+      if (mat.isNotEmpty) {
+        rows.add(_infoRow(
+          label: 'Matricule',
+          value: mat,
+          subtitleColor: subtitleColor,
+        ));
+      }
+      final fn = agent.fonction?.trim() ?? '';
+      if (fn.isNotEmpty) {
+        rows.add(_infoRow(
+          label: 'Fonction',
+          value: fn,
+          subtitleColor: subtitleColor,
+        ));
+      }
+      final zone = agent.zone?.trim() ?? '';
+      if (zone.isNotEmpty) {
+        rows.add(_infoRow(
+          label: 'Zone',
+          value: zone,
+          subtitleColor: subtitleColor,
+        ));
+      }
+    }
+
+    final tel = auth.utilisateur.telephone.trim().isNotEmpty
+        ? auth.utilisateur.telephone
+        : (agent?.telephoneAgent?.trim() ?? '');
+    if (tel.isNotEmpty) {
+      rows.add(_infoRow(
+        label: 'Téléphone',
+        value: tel,
+        subtitleColor: subtitleColor,
+      ));
+    }
+
+    return rows;
+  }
+
+  Widget _infoRow({
+    required String label,
+    required String value,
+    required Color subtitleColor,
+  }) {
+    return ListTile(
+      dense: true,
+      title: Text(
+        label,
+        style: TextStyle(color: subtitleColor, fontSize: 12),
+      ),
+      subtitle: Text(
+        value,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 15,
+          fontWeight: FontWeight.w500,
+        ),
+      ),
+    );
+  }
+
   Widget _buildCard(Color color, List<Widget> children) {
     return Container(
       decoration: BoxDecoration(
@@ -373,7 +424,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  // Widget utilitaire pour les lignes avec icône et flèche
   Widget _buildActionTile({
     required IconData icon,
     required String title,
@@ -394,7 +444,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  // Widget utilitaire pour les lignes avec Switch
   Widget _buildSwitchTile({
     required IconData icon,
     required String title,

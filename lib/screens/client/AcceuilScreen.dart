@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:rusa/screens/ProfileImageViewScreen.dart';
 import 'package:rusa/screens/client/AllVoyagesScreen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:rusa/screens/client/voyageDetails.dart';
 import 'package:rusa/widgets/ProfileImageWidget.dart';
 import 'package:rusa/services/api_service.dart';
-import 'package:rusa/models/destination_model.dart';
+import 'package:rusa/services/cache_service.dart';
 import 'package:rusa/models/voyage_model.dart';
 
 class SearchTripScreen extends StatefulWidget {
@@ -15,57 +16,252 @@ class SearchTripScreen extends StatefulWidget {
 }
 
 class _SearchTripScreenState extends State<SearchTripScreen> {
+  static const String _defaultProfileAsset = 'assets/images/profil.jpg';
   bool _showSearchBar = false;
   String _userName = '';
+  String? _userPhotoUrl;
   List<Voyage> _voyages = [];
   bool _isLoadingVoyages = false;
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
 
   @override
   void initState() {
     super.initState();
     _loadUserData();
-    _loadVoyages();
+    _loadVoyagesWithCacheFallback();
+    _retryLoadCacheIfNeeded();
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  List<Voyage> _getFilteredVoyages() {
+    final q = _searchQuery.trim().toLowerCase();
+    if (q.isEmpty) return _voyages;
+
+    return _voyages.where((v) {
+      final fields = [
+        v.villeDepart,
+        v.villeArrivee,
+        v.numeroBus,
+        v.libelleTypeBus,
+        v.date,
+        v.heure,
+      ];
+      return fields.any((f) => f.toLowerCase().contains(q));
+    }).toList();
+  }
+
+  /// Villes les plus présentes dans les trajets (départ + arrivée), pour les tags « Plus demandés ».
+  List<String> _popularCityTags({int maxTags = 12}) {
+    final counts = <String, int>{};
+    final display = <String, String>{};
+
+    void bump(String raw) {
+      final t = raw.trim();
+      if (t.isEmpty) return;
+      final key = t.toLowerCase();
+      display.putIfAbsent(key, () => _formatCityLabel(t));
+      counts[key] = (counts[key] ?? 0) + 1;
+    }
+
+    for (final v in _voyages) {
+      bump(v.villeDepart);
+      bump(v.villeArrivee);
+    }
+
+    final entries = counts.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+
+    return entries
+        .take(maxTags)
+        .map((e) => display[e.key] ?? e.key)
+        .toList();
+  }
+
+  String _formatCityLabel(String raw) {
+    if (raw.isEmpty) return raw;
+    return raw[0].toUpperCase() + raw.substring(1).toLowerCase();
+  }
+
+  void _applyCityTag(String cityLabel) {
+    final text = cityLabel.trim();
+    setState(() {
+      _searchQuery = text;
+      _searchController.value = TextEditingValue(
+        text: text,
+        selection: TextSelection.collapsed(offset: text.length),
+      );
+      _showSearchBar = true;
+    });
+  }
+
+  Widget _buildPopularCitiesSection() {
+    final tags = _popularCityTags();
+    if (tags.isEmpty) return const SizedBox.shrink();
+
+    final selectedNorm = _searchQuery.trim().toLowerCase();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Plus demandés',
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                color: Colors.white70,
+                fontWeight: FontWeight.w600,
+                fontSize: 15,
+              ),
+        ),
+        const SizedBox(height: 10),
+        SizedBox(
+          height: 40,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: tags.length,
+            separatorBuilder: (context, index) => const SizedBox(width: 8),
+            itemBuilder: (context, index) {
+              final city = tags[index];
+              final isSelected =
+                  selectedNorm == city.trim().toLowerCase();
+              return FilterChip(
+                label: Text(
+                  city,
+                  style: TextStyle(
+                    color: isSelected ? Colors.black : Colors.white,
+                    fontWeight: FontWeight.w500,
+                    fontSize: 13,
+                  ),
+                ),
+                selected: isSelected,
+                showCheckmark: false,
+                backgroundColor: const Color(0xFF2A2A2A),
+                selectedColor: const Color(0xFF00E676),
+                side: BorderSide(
+                  color: isSelected
+                      ? const Color(0xFF00E676)
+                      : Colors.white24,
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                onSelected: (selected) {
+                  if (selected) {
+                    _applyCityTag(city);
+                  } else if (selectedNorm == city.trim().toLowerCase()) {
+                    setState(() {
+                      _searchQuery = '';
+                      _searchController.clear();
+                    });
+                  }
+                },
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _loadVoyagesWithCacheFallback() async {
+    await _loadVoyagesFromCache();
+    if (!mounted) return;
+    if (_voyages.isEmpty) {
+      await _refreshVoyages();
+    }
   }
 
   Future<void> _loadUserData() async {
     try {
       final prefs = await SharedPreferences.getInstance();
+      final cachedAuth = await CacheService.getAuthResponse();
+      if (!mounted) return;
       setState(() {
         _userName = prefs.getString('user_name') ?? 'Utilisateur';
+        _userPhotoUrl = cachedAuth?.utilisateur.photoUrl;
       });
     } catch (e) {
       debugPrint('Erreur lors du chargement des données utilisateur: $e');
     }
   }
 
-  Future<void> _loadVoyages() async {
+  Future<void> _loadVoyagesFromCache() async {
+    if (!mounted) return;
+    setState(() {
+      _isLoadingVoyages = true;
+    });
+
+    try {
+      final cachedVoyages = await CacheService.getVoyages();
+      debugPrint(
+        'ACCUEIL: voyages cache = ${cachedVoyages == null ? "null" : cachedVoyages.length}',
+      );
+      if (cachedVoyages != null && mounted) {
+        setState(() {
+          _voyages = cachedVoyages;
+        });
+      }
+    } catch (e) {
+      debugPrint('Erreur lors du chargement du cache voyages: $e');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoadingVoyages = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _retryLoadCacheIfNeeded() async {
+    await Future<void>.delayed(const Duration(milliseconds: 900));
+    if (!mounted || _voyages.isNotEmpty) return;
+
+    final cachedVoyages = await CacheService.getVoyages();
+    if (!mounted) return;
+
+    if (cachedVoyages != null && cachedVoyages.isNotEmpty) {
+      setState(() {
+        _voyages = cachedVoyages;
+      });
+      debugPrint('ACCUEIL: cache rechargé après délai (${cachedVoyages.length})');
+    }
+  }
+
+  Future<void> _refreshVoyages() async {
+    if (!mounted) return;
     setState(() {
       _isLoadingVoyages = true;
     });
 
     try {
       final voyageResponse = await ApiService.getAllVoyages();
-
       if (voyageResponse.isNotEmpty) {
+        await CacheService.saveVoyages(voyageResponse);
+        if (!mounted) return;
         setState(() {
           _voyages = voyageResponse;
         });
       }
     } catch (e) {
-      debugPrint('Erreur lors du chargement des voyages: $e');
+      debugPrint('Erreur lors du rafraîchissement des voyages: $e');
     } finally {
-      setState(() {
-        _isLoadingVoyages = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isLoadingVoyages = false;
+        });
+      }
     }
-  }
-
-  Future<void> _refreshVoyages() async {
-    await _loadVoyages();
   }
 
   @override
   Widget build(BuildContext context) {
+    final safeProfileAsset = (_userPhotoUrl ?? '').trim().isNotEmpty
+        ? _userPhotoUrl!
+        : _defaultProfileAsset;
+    final filteredVoyages = _getFilteredVoyages();
+
     return Scaffold(
       body: SafeArea(
         child: Padding(
@@ -77,10 +273,20 @@ class _SearchTripScreenState extends State<SearchTripScreen> {
               Row(
                 children: [
                   ProfileImageWidget(
-                    imagePath: 'assets/images/profil.jpg',
+                    imagePath: safeProfileAsset,
+                    imageUrl: _userPhotoUrl,
                     userName: _userName,
                     onTap: () {
-                      // Action par défaut : navigation vers la visualisation
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => ProfileImageViewScreen(
+                            imagePath: safeProfileAsset,
+                            imageUrl: _userPhotoUrl,
+                            userName: _userName,
+                          ),
+                        ),
+                      );
                     },
                   ),
                   const SizedBox(width: 12),
@@ -98,6 +304,10 @@ class _SearchTripScreenState extends State<SearchTripScreen> {
                     onPressed: () {
                       setState(() {
                         _showSearchBar = !_showSearchBar;
+                        if (!_showSearchBar) {
+                          _searchController.clear();
+                          _searchQuery = '';
+                        }
                       });
                     },
                   ),
@@ -116,9 +326,13 @@ class _SearchTripScreenState extends State<SearchTripScreen> {
                           color: const Color(0xFF222222),
                           borderRadius: BorderRadius.circular(20),
                         ),
-                        child: const TextField(
-                          style: TextStyle(color: Colors.white),
-                          decoration: InputDecoration(
+                        child: TextField(
+                          controller: _searchController,
+                          onChanged: (value) {
+                            setState(() => _searchQuery = value);
+                          },
+                          style: const TextStyle(color: Colors.white),
+                          decoration: const InputDecoration(
                             hintText: 'Entrez la ville de départ / d\'arrivée',
                             hintStyle: TextStyle(color: Colors.white38),
                             prefixIcon: Icon(
@@ -132,41 +346,8 @@ class _SearchTripScreenState extends State<SearchTripScreen> {
                       )
                     : null,
               ),
-              // Toggle Switch (Aller simple / Aller-retour)
-              Container(
-                height: 40,
-                decoration: BoxDecoration(
-                  color: const Color(0xFF222222),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: Colors.white24,
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        alignment: Alignment.center,
-                        child: const Text(
-                          'Aller simple',
-                          style: TextStyle(color: Colors.white),
-                        ),
-                      ),
-                    ),
-                    Expanded(
-                      child: Container(
-                        alignment: Alignment.center,
-                        child: const Text(
-                          'Aller-retour',
-                          style: TextStyle(color: Colors.white54),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 30),
+              _buildPopularCitiesSection(),
+              const SizedBox(height: 24),
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -206,7 +387,7 @@ class _SearchTripScreenState extends State<SearchTripScreen> {
                     : RefreshIndicator(
                         onRefresh: _refreshVoyages,
                         color: const Color(0xFF00E676),
-                        child: _voyages.isEmpty
+                        child: filteredVoyages.isEmpty
                             ? ListView(
                                 children: [
                                   SizedBox(
@@ -216,7 +397,9 @@ class _SearchTripScreenState extends State<SearchTripScreen> {
                                   ),
                                   Center(
                                     child: Text(
-                                      'Aucun voyage disponible',
+                                      _searchQuery.trim().isEmpty
+                                          ? 'Aucun voyage disponible'
+                                          : 'Aucun résultat pour cette recherche',
                                       style: TextStyle(
                                         color: Colors.white54,
                                         fontSize: 16,
@@ -226,9 +409,9 @@ class _SearchTripScreenState extends State<SearchTripScreen> {
                                 ],
                               )
                             : ListView.builder(
-                                itemCount: _voyages.length,
+                                itemCount: filteredVoyages.length,
                                 itemBuilder: (context, index) {
-                                  final voyage = _voyages[index];
+                                  final voyage = filteredVoyages[index];
                                   return _buildVoyageCard(voyage);
                                 },
                               ),

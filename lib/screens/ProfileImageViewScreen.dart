@@ -1,14 +1,20 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 class ProfileImageViewScreen extends StatelessWidget {
+  static const String _defaultAssetImage = 'assets/images/profil.jpg';
   final String imagePath;
-  final String userName;
+  final String? imageUrl;
+  final String? userName;
 
   const ProfileImageViewScreen({
     super.key,
     required this.imagePath,
-    required this.userName,
+    this.imageUrl,
+    this.userName,
   });
 
   @override
@@ -19,11 +25,15 @@ class ProfileImageViewScreen extends StatelessWidget {
         backgroundColor: Colors.transparent,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new, color: Colors.white, size: 20),
+          icon: const Icon(
+            Icons.arrow_back_ios_new,
+            color: Colors.white,
+            size: 20,
+          ),
           onPressed: () => Navigator.pop(context),
         ),
         title: Text(
-          'Photo de Profil',
+          userName ?? 'Utilisateur',
           style: GoogleFonts.caveat(
             fontSize: 28,
             fontWeight: FontWeight.bold,
@@ -54,7 +64,7 @@ class ProfileImageViewScreen extends StatelessWidget {
                   borderRadius: BorderRadius.circular(20),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.3),
+                      color: Colors.black.withValues(alpha: 0.3),
                       blurRadius: 20,
                       offset: const Offset(0, 10),
                     ),
@@ -62,28 +72,13 @@ class ProfileImageViewScreen extends StatelessWidget {
                 ),
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(20),
-                  child: Image.asset(
-                    imagePath,
-                    fit: BoxFit.cover,
-                  ),
+                  child: _buildImage(),
                 ),
               ),
             ),
-            
+
             const SizedBox(height: 30),
-            
-            // Nom de l'utilisateur
-            Text(
-              userName,
-              style: GoogleFonts.caveat(
-                fontSize: 24,
-                fontWeight: FontWeight.w600,
-                color: Colors.white,
-              ),
-            ),
-            
-            const SizedBox(height: 40),
-            
+
             // Boutons d'action
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -99,13 +94,16 @@ class ProfileImageViewScreen extends StatelessWidget {
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF00E676),
                     foregroundColor: Colors.black,
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 12,
+                    ),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(25),
                     ),
                   ),
                 ),
-                
+
                 // Bouton supprimer
                 OutlinedButton.icon(
                   onPressed: () {
@@ -116,7 +114,10 @@ class ProfileImageViewScreen extends StatelessWidget {
                   style: OutlinedButton.styleFrom(
                     foregroundColor: Colors.white,
                     side: const BorderSide(color: Colors.white54),
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 12,
+                    ),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(25),
                     ),
@@ -128,5 +129,40 @@ class ProfileImageViewScreen extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  Widget _buildImage() {
+    final safeAssetPath = imagePath.trim().isNotEmpty
+        ? imagePath
+        : _defaultAssetImage;
+    final raw = imageUrl?.trim() ?? '';
+    if (raw.isNotEmpty) {
+      if (raw.startsWith('http://') || raw.startsWith('https://')) {
+        return Image.network(
+          raw,
+          fit: BoxFit.cover,
+          errorBuilder: (context, error, stackTrace) =>
+              Image.asset(safeAssetPath, fit: BoxFit.cover),
+        );
+      }
+
+      final bytes = _decodeBase64Image(raw);
+      if (bytes != null) {
+        return Image.memory(bytes, fit: BoxFit.cover, gaplessPlayback: true);
+      }
+    }
+
+    return Image.asset(safeAssetPath, fit: BoxFit.cover);
+  }
+
+  Uint8List? _decodeBase64Image(String input) {
+    try {
+      final cleaned = input.contains('base64,')
+          ? input.split('base64,').last
+          : input;
+      return base64Decode(cleaned);
+    } catch (_) {
+      return null;
+    }
   }
 }
