@@ -142,8 +142,7 @@ class _ReservationsScreenState extends State<ReservationsScreen> {
         );
         setState(() {
           _reservations = cachedReservations ?? _reservations;
-          _error =
-              'Réseau indisponible. Affichage des données en cache.';
+          _error = 'Réseau indisponible. Affichage des données en cache.';
           _isLoading = false;
         });
         return;
@@ -234,6 +233,7 @@ class _ReservationsScreenState extends State<ReservationsScreen> {
               reservationData: response.reservation,
               paiementData: response.paiement,
               billetData: response.billet,
+              billets: response.billets,
             ),
           ),
         );
@@ -294,7 +294,7 @@ class _ReservationsScreenState extends State<ReservationsScreen> {
           'Mes Réservations',
           style: GoogleFonts.caveat(
             color: Colors.white,
-            fontSize: 28,
+            fontSize: 20,
             fontWeight: FontWeight.bold,
           ),
         ),

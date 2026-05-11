@@ -1,5 +1,17 @@
 // Modèles pour l'authentification
 
+int? _asNullableInt(dynamic value) {
+  if (value == null) return null;
+  if (value is int) return value;
+  if (value is num) return value.toInt();
+  if (value is String) return int.tryParse(value.trim());
+  return null;
+}
+
+int _asInt(dynamic value, {int fallback = 0}) {
+  return _asNullableInt(value) ?? fallback;
+}
+
 class AuthResponse {
   final bool? success;
   final String? message;
@@ -125,6 +137,7 @@ class Utilisateur {
   final int? idAgent;
   final int?
   idClient; // ID du client associé (peut être différent de l'ID utilisateur)
+  final int? idSite;
   final List<dynamic> roles;
   final Role? primaryRole;
 
@@ -145,13 +158,14 @@ class Utilisateur {
     this.adresseResidence,
     this.idAgent,
     this.idClient,
+    this.idSite,
     required this.roles,
     this.primaryRole,
   });
 
   factory Utilisateur.fromJson(Map<String, dynamic> json) {
     return Utilisateur(
-      idUtilisateur: json['idUtilisateur'] ?? 0,
+      idUtilisateur: _asInt(json['idUtilisateur']),
       referenceUtilisateur: json['referenceUtilisateur'] ?? '',
       nomComplet: json['nomComplet'] ?? '',
       email: json['email'] ?? '',
@@ -162,11 +176,14 @@ class Utilisateur {
       genre: json['genre'] ?? '',
       doitChangerMotDePasse: json['doitChangerMotDePasse'] ?? false,
       statut: json['statut'] ?? false,
-      idRole: json['idRole'],
-      idSociete: json['idSociete'] ?? 0,
+      idRole: _asNullableInt(json['idRole']),
+      idSociete: _asInt(json['idSociete']),
       adresseResidence: json['adresseResidence'],
-      idAgent: json['idAgent'],
-      idClient: json['idClient'] ?? json['clientId'] ?? json['client_id'],
+      idAgent: _asNullableInt(json['idAgent']),
+      idClient: _asNullableInt(
+        json['idClient'] ?? json['clientId'] ?? json['client_id'],
+      ),
+      idSite: _asNullableInt(json['idSite']),
       roles: (json['roles'] as List?) ?? [],
       primaryRole: json['primaryRole'] != null
           ? Role.fromJson(json['primaryRole'])
@@ -192,6 +209,7 @@ class Utilisateur {
       'adresseResidence': adresseResidence,
       'idAgent': idAgent,
       'idClient': idClient,
+      'idSite': idSite,
       'roles': roles,
       'primaryRole': primaryRole?.toJson(),
     };
@@ -322,6 +340,7 @@ class Agent {
   final String? roleAgent;
   final String? photoUrl;
   final int? idSociete;
+  final int? idSite;
   final String? adresseResidence;
   final String? zone;
 
@@ -340,13 +359,14 @@ class Agent {
     this.roleAgent,
     this.photoUrl,
     this.idSociete,
+    this.idSite,
     this.adresseResidence,
     this.zone,
   });
 
   factory Agent.fromJson(Map<String, dynamic> json) {
     return Agent(
-      idAgent: json['idAgent'] ?? 0,
+      idAgent: _asInt(json['idAgent']),
       nomComplet: json['nomComplet'] ?? json['nomAgent'] ?? '',
       matricule: json['matricule'],
       genre: json['genre'],
@@ -357,7 +377,8 @@ class Agent {
       fonction: json['fonction'],
       roleAgent: json['roleAgent'],
       photoUrl: json['photoUrl'],
-      idSociete: json['idSociete'],
+      idSociete: _asNullableInt(json['idSociete']),
+      idSite: _asNullableInt(json['idSite']),
       adresseResidence: json['adresseResidence'],
       zone: json['zone'],
     );
@@ -377,6 +398,7 @@ class Agent {
       'roleAgent': roleAgent,
       'photoUrl': photoUrl,
       'idSociete': idSociete,
+      'idSite': idSite,
       'adresseResidence': adresseResidence,
       'zone': zone,
     };

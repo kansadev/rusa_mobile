@@ -127,10 +127,11 @@ class _LoginScreenState extends State<LoginScreen> {
         }
       } else {
         if (mounted) {
+          final apiMessage = ApiService.lastAuthErrorMessage;
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(
-                'Email ou mot de passe incorrect',
+                apiMessage ?? 'Email ou mot de passe incorrect',
                 style: TextStyle(color: Colors.white),
               ),
               backgroundColor: Colors.red,

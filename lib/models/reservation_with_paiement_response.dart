@@ -2,6 +2,8 @@ class ReservationWithPaiementResponse {
   final ReservationData reservation;
   final PaiementData paiement;
   final BilletData? billet;
+  /// Tous les billets (réservation multi-passagers). Si vide, utiliser [billet] seul.
+  final List<BilletData> billets;
   final String transactionId;
   final String statut;
   final String message;
@@ -11,6 +13,7 @@ class ReservationWithPaiementResponse {
     required this.reservation,
     required this.paiement,
     this.billet,
+    this.billets = const [],
     required this.transactionId,
     required this.statut,
     required this.message,
@@ -18,12 +21,25 @@ class ReservationWithPaiementResponse {
   });
 
   factory ReservationWithPaiementResponse.fromJson(Map<String, dynamic> json) {
+    final billet = json['billet'] != null
+        ? BilletData.fromJson(json['billet'] as Map<String, dynamic>)
+        : null;
+    List<BilletData> billets;
+    if (json['billets'] is List) {
+      billets = (json['billets'] as List)
+          .whereType<Map>()
+          .map((e) => BilletData.fromJson(Map<String, dynamic>.from(e)))
+          .toList();
+    } else if (billet != null) {
+      billets = [billet];
+    } else {
+      billets = const [];
+    }
     return ReservationWithPaiementResponse(
       reservation: ReservationData.fromJson(json['reservation']),
       paiement: PaiementData.fromJson(json['paiement']),
-      billet: json['billet'] != null
-          ? BilletData.fromJson(json['billet'] as Map<String, dynamic>)
-          : null,
+      billet: billet ?? (billets.isNotEmpty ? billets.first : null),
+      billets: billets,
       transactionId: json['transactionId'] ?? '',
       statut: json['statut'] ?? '',
       message: json['message'] ?? '',
@@ -36,6 +52,7 @@ class ReservationWithPaiementResponse {
       'reservation': reservation.toJson(),
       'paiement': paiement.toJson(),
       'billet': billet?.toJson(),
+      'billets': billets.map((b) => b.toJson()).toList(),
       'transactionId': transactionId,
       'statut': statut,
       'message': message,
@@ -315,6 +332,11 @@ class BilletData {
   final int idClient;
   final int idSociete;
   final String urlBillet;
+  /// Ligne passager (réservation multi-passagers) — requis pour `/embarquer`.
+  final int idReservationPassenger;
+  final bool isUsed;
+  final String? nomPassager;
+  final String? codeSiege;
 
   BilletData({
     required this.id,
@@ -324,29 +346,56 @@ class BilletData {
     required this.idClient,
     required this.idSociete,
     required this.urlBillet,
+    this.idReservationPassenger = 0,
+    this.isUsed = false,
+    this.nomPassager,
+    this.codeSiege,
   });
 
   factory BilletData.fromJson(Map<String, dynamic> json) {
     return BilletData(
-      id: json['id'] ?? 0,
+      id: json['idBillet'] ?? json['id'] ?? 0,
       qrCode: json['qrCode'] ?? '',
       dateGeneration: json['dateGeneration'] ?? '',
       idReservation: json['idReservation'] ?? 0,
       idClient: json['idClient'] ?? 0,
       idSociete: json['idSociete'] ?? 0,
       urlBillet: json['urlBillet'] ?? '',
+      idReservationPassenger: json['idReservationPassenger'] ?? 0,
+      isUsed: json['isUsed'] == true,
+      nomPassager: json['nomPassager']?.toString(),
+      codeSiege: json['codeSiege']?.toString(),
     );
   }
 
   Map<String, dynamic> toJson() {
-    return {
+    final m = <String, dynamic>{
       'id': id,
+      'idBillet': id,
       'qrCode': qrCode,
       'dateGeneration': dateGeneration,
       'idReservation': idReservation,
       'idClient': idClient,
       'idSociete': idSociete,
       'urlBillet': urlBillet,
+      'idReservationPassenger': idReservationPassenger,
+      'isUsed': isUsed,
     };
+    if (nomPassager != null) m['nomPassager'] = nomPassager;
+    if (codeSiege != null) m['codeSiege'] = codeSiege;
+    return m;
   }
+}
+
+/// Résultat de `POST /api/Billet/societe/.../embarquer`
+class EmbarquerBilletResult {
+  final bool success;
+  final String message;
+  final BilletData? billet;
+
+  const EmbarquerBilletResult({
+    required this.success,
+    required this.message,
+    this.billet,
+  });
 }

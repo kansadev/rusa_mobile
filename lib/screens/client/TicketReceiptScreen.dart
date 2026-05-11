@@ -19,11 +19,15 @@ class TicketReceiptScreen extends StatefulWidget {
   final PaiementData? paiementData;
   final BilletData? billetData;
 
+  /// Plusieurs billets (même réservation). Si vide, seul [billetData] est affiché.
+  final List<BilletData> billets;
+
   const TicketReceiptScreen({
     super.key,
     this.reservationData,
     this.paiementData,
     this.billetData,
+    this.billets = const [],
   });
 
   @override
@@ -32,7 +36,15 @@ class TicketReceiptScreen extends StatefulWidget {
 
 class _TicketReceiptScreenState extends State<TicketReceiptScreen> {
   final GlobalKey _ticketKey = GlobalKey();
+  final PageController _billetCarouselController = PageController();
   bool _isSaving = false;
+  int _carouselIndex = 0;
+
+  @override
+  void dispose() {
+    _billetCarouselController.dispose();
+    super.dispose();
+  }
 
   String _formatDate(String? dateString) {
     if (dateString == null || dateString.isEmpty) return 'N/A';
@@ -56,7 +68,8 @@ class _TicketReceiptScreenState extends State<TicketReceiptScreen> {
   Future<Uint8List?> _captureTicket() async {
     try {
       final boundary =
-          _ticketKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
+          _ticketKey.currentContext?.findRenderObject()
+              as RenderRepaintBoundary?;
       if (boundary == null) return null;
       final image = await boundary.toImage(pixelRatio: 3);
       final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
@@ -127,9 +140,8 @@ class _TicketReceiptScreenState extends State<TicketReceiptScreen> {
       pdf.addPage(
         pw.Page(
           pageFormat: PdfPageFormat.a4,
-          build: (_) => pw.Center(
-            child: pw.Image(memoryImage, fit: pw.BoxFit.contain),
-          ),
+          build: (_) =>
+              pw.Center(child: pw.Image(memoryImage, fit: pw.BoxFit.contain)),
         ),
       );
 
@@ -174,10 +186,277 @@ class _TicketReceiptScreenState extends State<TicketReceiptScreen> {
     );
   }
 
+  /// Une carte billet complète (bandeau vert + QR + trajet + séparateur + passager + date).
+  Widget _buildFullTicketCard({
+    required bool hasBillet,
+    BilletData? billet,
+    required String route,
+    required String date,
+    required String time,
+    required String price,
+    required String passengerFallback,
+    int? pageIndex,
+    int? pageCount,
+  }) {
+    final displayPassenger = hasBillet && billet != null
+        ? ((billet.nomPassager != null && billet.nomPassager!.trim().isNotEmpty
+                  ? billet.nomPassager!
+                  : passengerFallback)
+              .toUpperCase())
+        : passengerFallback.toUpperCase();
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
+            decoration: const BoxDecoration(
+              color: Color(0xFF00E676),
+              borderRadius: BorderRadius.only(
+                topLeft: Radius.circular(20),
+                topRight: Radius.circular(20),
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Code siège: ${billet?.codeSiege}',
+                      style: GoogleFonts.caveat(
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.black,
+                      ),
+                    ),
+                    if (pageIndex != null &&
+                        pageCount != null &&
+                        pageCount > 1) ...[
+                      const SizedBox(height: 6),
+                      Text(
+                        'Billet ${pageIndex + 1} / $pageCount',
+                        textAlign: TextAlign.center,
+                        style: GoogleFonts.poppins(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.black87,
+                          letterSpacing: 0.4,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.only(
+              top: 24,
+              left: 20,
+              right: 20,
+              bottom: 10,
+            ),
+            child: Column(
+              children: [
+                if (hasBillet && billet != null) ...[
+                  if (!billet.isUsed)
+                    Center(
+                      child: Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          border: Border.all(
+                            color: const Color(0xFF00E676),
+                            width: 2,
+                          ),
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: QrImageView(
+                          data: billet.qrCode,
+                          version: QrVersions.auto,
+                          size: 160,
+                          backgroundColor: Colors.white,
+                        ),
+                      ),
+                    )
+                  else
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(
+                        vertical: 22,
+                        horizontal: 16,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFFEBEE),
+                        border: Border.all(
+                          color: const Color(0xFFE53935),
+                          width: 2,
+                        ),
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: const Text(
+                        'Ce Billet est déjà utilisé',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: Color(0xFFC62828),
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                ] else
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.withValues(alpha: 0.12),
+                      border: Border.all(color: Colors.orange, width: 1.2),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Text(
+                      'Billet non encore émis.\nRevenez après validation de la réservation.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Colors.black87,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                const SizedBox(height: 24),
+                Text(
+                  route,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black87,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const TicketSeparator(),
+          Padding(
+            padding: const EdgeInsets.only(
+              top: 10,
+              left: 24,
+              right: 24,
+              bottom: 24,
+            ),
+            child: Column(
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'PASSAGER',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.black45,
+                              letterSpacing: 1.0,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            displayPassenger,
+                            maxLines: 4,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.black87,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          const Text(
+                            'PRIX',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.black45,
+                              letterSpacing: 1.0,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            price,
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF00E676),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 20),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 10,
+                    horizontal: 16,
+                  ),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF5F5F5),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(
+                        Icons.calendar_today_outlined,
+                        size: 16,
+                        color: Colors.black54,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Départ le $date à $time',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.black87,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final hasBillet = widget.billetData != null;
-    final qrCode = widget.billetData?.qrCode ?? '';
+    final billetsAffichage = widget.billets.isNotEmpty
+        ? widget.billets
+        : (widget.billetData != null
+              ? <BilletData>[widget.billetData!]
+              : <BilletData>[]);
+    final hasBillet = billetsAffichage.isNotEmpty;
+    final multiBillets = billetsAffichage.length > 1;
     final route =
         '${widget.reservationData?.villeDepart ?? 'N/A'} → ${widget.reservationData?.villeArrivee ?? 'N/A'}';
     final date = _formatDate(widget.reservationData?.dateVoyage);
@@ -198,10 +477,14 @@ class _TicketReceiptScreenState extends State<TicketReceiptScreen> {
         elevation: 0,
         leading: GestureDetector(
           onTap: () => Navigator.pop(context),
-          child: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
+          child: const Icon(
+            Icons.arrow_back_ios_new_rounded,
+            color: Colors.white,
+            size: 20,
+          ),
         ),
         title: Text(
-          'Mon Billet',
+          multiBillets ? 'Mes billets' : 'Mon Billet',
           style: GoogleFonts.caveat(
             fontSize: 20,
             fontWeight: FontWeight.bold,
@@ -226,7 +509,10 @@ class _TicketReceiptScreenState extends State<TicketReceiptScreen> {
                 value: 'pdf',
                 child: Row(
                   children: [
-                    Icon(Icons.picture_as_pdf_outlined, color: Color(0xFF00E676)),
+                    Icon(
+                      Icons.picture_as_pdf_outlined,
+                      color: Color(0xFF00E676),
+                    ),
                     SizedBox(width: 10),
                     Text('Télécharger en PDF'),
                   ],
@@ -247,207 +533,116 @@ class _TicketReceiptScreenState extends State<TicketReceiptScreen> {
         ],
       ),
       body: SafeArea(
-        child: Column(
-          children: [
-            Expanded(
-              child: Center(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-                  child: RepaintBoundary(
-                    key: _ticketKey,
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Container(
-                            width: double.infinity,
-                            padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
-                            decoration: const BoxDecoration(
-                              color: Color(0xFF00E676),
-                              borderRadius: BorderRadius.only(
-                                topLeft: Radius.circular(20),
-                                topRight: Radius.circular(20),
+        child: multiBillets
+            ? Column(
+                children: [
+                  Expanded(
+                    child: PageView.builder(
+                      controller: _billetCarouselController,
+                      onPageChanged: (i) {
+                        setState(() => _carouselIndex = i);
+                      },
+                      itemCount: billetsAffichage.length,
+                      itemBuilder: (context, i) {
+                        return Center(
+                          child: SingleChildScrollView(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 20,
+                              vertical: 14,
+                            ),
+                            child: RepaintBoundary(
+                              key: i == _carouselIndex
+                                  ? _ticketKey
+                                  : ValueKey<String>('ticket_rb_$i'),
+                              child: _buildFullTicketCard(
+                                hasBillet: true,
+                                billet: billetsAffichage[i],
+                                route: route,
+                                date: date,
+                                time: time,
+                                price: price,
+                                passengerFallback: passengerName,
+                                pageIndex: i,
+                                pageCount: billetsAffichage.length,
                               ),
                             ),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Text(
-                                  'RUSATRAVEL',
-                                  style: GoogleFonts.caveat(
-                                    fontSize: 22,
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.black,
-                                  ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 12, top: 4),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: List.generate(
+                            billetsAffichage.length,
+                            (i) => Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 4,
+                              ),
+                              child: AnimatedContainer(
+                                duration: const Duration(milliseconds: 200),
+                                width: i == _carouselIndex ? 22 : 8,
+                                height: 8,
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(4),
+                                  color: i == _carouselIndex
+                                      ? const Color(0xFF00E676)
+                                      : const ui.Color.fromARGB(
+                                          66,
+                                          255,
+                                          255,
+                                          255,
+                                        ),
                                 ),
-                                Text(
-                                  'BILLET',
-                                  style: GoogleFonts.poppins(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w700,
-                                    letterSpacing: 1.5,
-                                    color: Colors.black87,
-                                  ),
-                                ),
-                              ],
+                              ),
                             ),
                           ),
-                          Padding(
-                            padding: const EdgeInsets.only(top: 24, left: 20, right: 20, bottom: 10),
-                            child: Column(
-                              children: [
-                                hasBillet
-                                    ? Container(
-                                        padding: const EdgeInsets.all(12),
-                                        decoration: BoxDecoration(
-                                          border: Border.all(
-                                            color: const Color(0xFF00E676),
-                                            width: 2,
-                                          ),
-                                          borderRadius: BorderRadius.circular(16),
-                                        ),
-                                        child: QrImageView(
-                                          data: qrCode,
-                                          version: QrVersions.auto,
-                                          size: 160,
-                                          backgroundColor: Colors.white,
-                                        ),
-                                      )
-                                    : Container(
-                                        width: double.infinity,
-                                        padding: const EdgeInsets.all(16),
-                                        decoration: BoxDecoration(
-                                          color: Colors.orange.withValues(alpha: 0.12),
-                                          border: Border.all(color: Colors.orange, width: 1.2),
-                                          borderRadius: BorderRadius.circular(12),
-                                        ),
-                                        child: const Text(
-                                          'Billet non encore émis.\nRevenez après validation de la réservation.',
-                                          textAlign: TextAlign.center,
-                                          style: TextStyle(
-                                            color: Colors.black87,
-                                            fontSize: 13,
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                        ),
-                                      ),
-                                const SizedBox(height: 24),
-                                Text(
-                                  route,
-                                  textAlign: TextAlign.center,
-                                  style: const TextStyle(
-                                    fontSize: 22,
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.black87,
-                                  ),
-                                ),
-                              ],
-                            ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          'Glissez pour voir l’autre billet',
+                          style: GoogleFonts.poppins(
+                            fontSize: 11,
+                            color: Colors.white70,
+                            fontWeight: FontWeight.w500,
                           ),
-                          const TicketSeparator(),
-                          Padding(
-                            padding: const EdgeInsets.only(top: 10, left: 24, right: 24, bottom: 24),
-                            child: Column(
-                              children: [
-                                Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          const Text(
-                                            'PASSAGER',
-                                            style: TextStyle(
-                                              fontSize: 11,
-                                              fontWeight: FontWeight.bold,
-                                              color: Colors.black45,
-                                              letterSpacing: 1.0,
-                                            ),
-                                          ),
-                                          const SizedBox(height: 4),
-                                          Text(
-                                            passengerName.toUpperCase(),
-                                            style: const TextStyle(
-                                              fontSize: 15,
-                                              fontWeight: FontWeight.bold,
-                                              color: Colors.black87,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.end,
-                                        children: [
-                                          const Text(
-                                            'PRIX',
-                                            style: TextStyle(
-                                              fontSize: 11,
-                                              fontWeight: FontWeight.bold,
-                                              color: Colors.black45,
-                                              letterSpacing: 1.0,
-                                            ),
-                                          ),
-                                          const SizedBox(height: 4),
-                                          Text(
-                                            price,
-                                            style: const TextStyle(
-                                              fontSize: 18,
-                                              fontWeight: FontWeight.bold,
-                                              color: Color(0xFF00E676),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 20),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFFF5F5F5),
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: Row(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      const Icon(
-                                        Icons.calendar_today_outlined,
-                                        size: 16,
-                                        color: Colors.black54,
-                                      ),
-                                      const SizedBox(width: 8),
-                                      Text(
-                                        'Départ le $date à $time',
-                                        style: const TextStyle(
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.w600,
-                                          color: Colors.black87,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              )
+            : Column(
+                children: [
+                  Expanded(
+                    child: Center(
+                      child: SingleChildScrollView(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 20,
+                          vertical: 14,
+                        ),
+                        child: RepaintBoundary(
+                          key: _ticketKey,
+                          child: _buildFullTicketCard(
+                            hasBillet: hasBillet,
+                            billet: hasBillet ? billetsAffichage.first : null,
+                            route: route,
+                            date: date,
+                            time: time,
+                            price: price,
+                            passengerFallback: passengerName,
                           ),
-                        ],
+                        ),
                       ),
                     ),
                   ),
-                ),
+                ],
               ),
-            ),
-           
-          ],
-        ),
       ),
     );
   }

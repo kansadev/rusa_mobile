@@ -32,6 +32,7 @@ class _BusDetailsScreenState extends State<BusDetailsScreen> {
 
     try {
       final bus = await ApiService.getBusById(widget.busId);
+      if (!mounted) return;
 
       if (bus != null) {
         setState(() {
@@ -45,6 +46,7 @@ class _BusDetailsScreenState extends State<BusDetailsScreen> {
         });
       }
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _error = 'Erreur lors du chargement: $e';
         _isLoading = false;
@@ -242,26 +244,22 @@ class _BusDetailsScreenState extends State<BusDetailsScreen> {
             children: [
               // Titre principal
               Text(
-                '${_bus!.marques} - Bus ${_bus!.numeroBus}',
+                '${_bus!.marques} - Immatriculation: ${_bus!.numeroDePlaque}',
                 style: GoogleFonts.poppins(
                   color: Colors.white,
-                  fontSize: 28,
+                  fontSize: 14,
                   fontWeight: FontWeight.bold,
                 ),
               ),
-              const SizedBox(height: 8),
-              Text(
-                _bus!.libelleTypeBus ?? 'Type non spécifié',
-                style: GoogleFonts.poppins(color: Colors.white70, fontSize: 16),
-              ),
+
               const SizedBox(height: 30),
 
               // Informations détaillées
               _buildInfoSection('Informations générales', [
                 _buildInfoItem(
                   Icons.confirmation_number,
-                  'Numéro du bus',
-                  '${_bus!.numeroBus}',
+                  'Alias du bus',
+                  _bus!.aliasVehicule,
                   Colors.blue,
                 ),
                 _buildInfoItem(

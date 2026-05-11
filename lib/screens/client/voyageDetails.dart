@@ -7,6 +7,7 @@ import 'package:rusa/services/api_service.dart';
 import 'package:rusa/services/session_service.dart';
 import 'package:rusa/screens/client/TicketReceiptScreen.dart';
 import 'package:rusa/screens/client/BusDetailsScreen.dart';
+import 'package:rusa/screens/client/ReservationFormScreen.dart';
 
 class SeatSelectionScreen extends StatefulWidget {
   final Voyage voyage;
@@ -40,6 +41,19 @@ class _SeatSelectionScreenState extends State<SeatSelectionScreen> {
   void dispose() {
     _pageController.dispose();
     super.dispose();
+  }
+
+  String _suffixeDevisePrix(Voyage v) {
+    final c = v.codeDevisePrix?.trim();
+    if (c == null || c.isEmpty) return 'FC';
+    return c;
+  }
+
+  /// Pour l’affichage et l’ancien flux paiement : `prix` du voyage si renseigné, sinon le tarif le plus élevé.
+  double _prixUnitaireReference(Voyage v) {
+    if (v.prix > 0) return v.prix;
+    if (v.tarifs.isEmpty) return 0;
+    return v.tarifs.map((t) => t.prix).reduce((a, b) => a > b ? a : b);
   }
 
   // Méthode pour formater la date
@@ -194,7 +208,15 @@ class _SeatSelectionScreenState extends State<SeatSelectionScreen> {
                   Positioned(
                     top: 16,
                     right: 16,
-                    child: _buildCircularButton(Icons.favorite_border, () {}),
+                    child: _buildCircularButton(Icons.more_vert_rounded, () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) =>
+                              BusDetailsScreen(busId: widget.voyage.idVehicule),
+                        ),
+                      );
+                    }),
                   ),
                 ],
               ),
@@ -269,39 +291,90 @@ class _SeatSelectionScreenState extends State<SeatSelectionScreen> {
         ),
         const SizedBox(height: 20),
 
-        // Prix et informations bus
+        // Tarification (multi-catégories + devise)
         Container(
+          width: double.infinity,
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
             color: Colors.white.withOpacity(0.1),
             borderRadius: BorderRadius.circular(12),
             border: Border.all(color: Colors.white.withOpacity(0.2)),
           ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Prix du billet',
-                    style: TextStyle(
-                      color: Colors.white.withOpacity(0.7),
-                      fontSize: 12,
-                      fontWeight: FontWeight.w500,
-                    ),
+              if (widget.voyage.tarifs.isNotEmpty) ...[
+                Text(
+                  'Tarifs par classe',
+                  style: TextStyle(
+                    color: Colors.white.withOpacity(0.7),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
                   ),
-                  const SizedBox(height: 4),
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: widget.voyage.tarifs
+                      .map(
+                        (t) => Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.white10,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: Colors.white12),
+                          ),
+                          child: Text(
+                            '${t.libelle}: ${t.prix.toStringAsFixed(0)} ${_suffixeDevisePrix(widget.voyage)}',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                      )
+                      .toList(),
+                ),
+                if (widget.voyage.prixDevisePrincipale != null &&
+                    (widget.voyage.codeDevisePrincipale?.trim().isNotEmpty ??
+                        false)) ...[
+                  const SizedBox(height: 10),
                   Text(
-                    '${widget.voyage.prix.toStringAsFixed(0)} FC',
-                    style: const TextStyle(
-                      color: Color(0xFF00E676),
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
+                    'Indication (${widget.voyage.codeDevisePrincipale}): ${widget.voyage.prixDevisePrincipale!.toStringAsFixed(0)}',
+                    style: TextStyle(
+                      color: Colors.white.withOpacity(0.55),
+                      fontSize: 11,
                     ),
                   ),
                 ],
-              ),
+              ] else ...[
+                Text(
+                  'Prix du billet',
+                  style: TextStyle(
+                    color: Colors.white.withOpacity(0.7),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  _prixUnitaireReference(widget.voyage) > 0
+                      ? '${_prixUnitaireReference(widget.voyage).toStringAsFixed(0)} ${_suffixeDevisePrix(widget.voyage)}'
+                      : 'Tarif sur demande',
+                  style: TextStyle(
+                    color: _prixUnitaireReference(widget.voyage) > 0
+                        ? const Color(0xFF00E676)
+                        : Colors.white54,
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
             ],
           ),
         ),
@@ -319,7 +392,7 @@ class _SeatSelectionScreenState extends State<SeatSelectionScreen> {
                   ),
                 ),
                 Text(
-                  widget.voyage.heureDepart,
+                  widget.voyage.heure,
                   style: TextStyle(
                     color: Color(0xFF00E676),
                     fontWeight: FontWeight.bold,
@@ -349,27 +422,52 @@ class _SeatSelectionScreenState extends State<SeatSelectionScreen> {
                 ),
               ],
             ),
+            const SizedBox(height: 5),
+            Row(
+              children: [
+                Text(
+                  "Compagnie: ",
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
+                ),
+                Text(
+                  widget.voyage.nomSociete ?? '',
+                  style: TextStyle(
+                    color: Color(0xFF00E676),
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 5),
+            Row(
+              children: [
+                Text(
+                  "Filiale: ",
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
+                ),
+                Text(
+                  widget.voyage.nomSite ?? '',
+                  style: TextStyle(
+                    color: Color(0xFF00E676),
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
+                ),
+              ],
+            ),
           ],
         ),
         const SizedBox(height: 24),
-        Center(
-          child: TextButton(
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) =>
-                      BusDetailsScreen(busId: widget.voyage.idBus),
-                ),
-              );
-            },
-            child: Text(
-              "Voir les informations du bus",
-              style: TextStyle(color: Color.fromARGB(255, 155, 156, 155)),
-            ),
-          ),
-        ),
-        const SizedBox(height: 20),
+
         // Bouton "Reserver"
         SizedBox(
           width: double.infinity,
@@ -381,7 +479,15 @@ class _SeatSelectionScreenState extends State<SeatSelectionScreen> {
                 borderRadius: BorderRadius.circular(20),
               ),
             ),
-            onPressed: _showReservationOptionsDialog,
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) =>
+                      ReservationFormScreen(voyage: widget.voyage),
+                ),
+              );
+            },
             child: const Text(
               'Reserver',
               style: TextStyle(
@@ -414,16 +520,18 @@ class _SeatSelectionScreenState extends State<SeatSelectionScreen> {
   void _showReservationOptionsDialog() {
     final montantController = TextEditingController();
     int nombreDePlace = 1;
-    double montantTotal = widget.voyage.prix * nombreDePlace;
+    final prixRef = _prixUnitaireReference(widget.voyage);
+    double montantTotal = prixRef * nombreDePlace;
     bool updatingMontantField = false;
     montantController.text = (montantTotal * 0.5).toStringAsFixed(0);
+    final devise = _suffixeDevisePrix(widget.voyage);
 
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) {
-          montantTotal = widget.voyage.prix * nombreDePlace;
+          montantTotal = prixRef * nombreDePlace;
           final montantMaximum = montantTotal * 0.5;
           return Dialog(
             backgroundColor: const Color(0xFF222222),
@@ -461,7 +569,7 @@ class _SeatSelectionScreenState extends State<SeatSelectionScreen> {
                                 if (nombreDePlace > 1) {
                                   setDialogState(() {
                                     nombreDePlace--;
-                                    final total = widget.voyage.prix * nombreDePlace;
+                                    final total = prixRef * nombreDePlace;
                                     montantController.text = (total * 0.5)
                                         .toStringAsFixed(0);
                                   });
@@ -483,7 +591,7 @@ class _SeatSelectionScreenState extends State<SeatSelectionScreen> {
                             IconButton(
                               onPressed: () => setDialogState(() {
                                 nombreDePlace++;
-                                final total = widget.voyage.prix * nombreDePlace;
+                                final total = prixRef * nombreDePlace;
                                 montantController.text = (total * 0.5)
                                     .toStringAsFixed(0);
                               }),
@@ -498,7 +606,7 @@ class _SeatSelectionScreenState extends State<SeatSelectionScreen> {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      'Montant total: ${montantTotal.toStringAsFixed(0)} FC',
+                      'Montant total: ${montantTotal.toStringAsFixed(0)} $devise',
                       style: const TextStyle(
                         color: Color(0xFF00E676),
                         fontWeight: FontWeight.bold,
@@ -506,7 +614,7 @@ class _SeatSelectionScreenState extends State<SeatSelectionScreen> {
                     ),
                     const SizedBox(height: 6),
                     Text(
-                      'Montant payé min (50%): ${montantMaximum.toStringAsFixed(0)} FC',
+                      'Montant payé min (50%): ${montantMaximum.toStringAsFixed(0)} $devise',
                       style: const TextStyle(color: Colors.white70),
                     ),
                     const SizedBox(height: 12),
@@ -518,22 +626,21 @@ class _SeatSelectionScreenState extends State<SeatSelectionScreen> {
                         if (updatingMontantField) return;
                         final montant = double.tryParse(value.trim());
                         if (montant == null || montant <= 0) return;
-                        final computedSeats =
-                            ((montant * 2) / widget.voyage.prix).ceil();
+                        if (prixRef <= 0) return;
+                        final computedSeats = ((montant * 2) / prixRef).ceil();
                         final nextSeats = computedSeats < 1 ? 1 : computedSeats;
                         if (nextSeats != nombreDePlace) {
                           setDialogState(() {
                             updatingMontantField = true;
                             nombreDePlace = nextSeats;
-                            final minAllowed =
-                                (widget.voyage.prix * nombreDePlace) * 0.5;
+                            final minAllowed = (prixRef * nombreDePlace) * 0.5;
                             if (montant < minAllowed) {
                               montantController.text = minAllowed
                                   .toStringAsFixed(0);
                               montantController.selection =
                                   TextSelection.collapsed(
-                                offset: montantController.text.length,
-                              );
+                                    offset: montantController.text.length,
+                                  );
                             }
                             updatingMontantField = false;
                           });
@@ -568,7 +675,7 @@ class _SeatSelectionScreenState extends State<SeatSelectionScreen> {
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   SnackBar(
                                     content: Text(
-                                      'Le montant payé doit être >= ${montantMaximum.toStringAsFixed(0)} FC et <= ${montantTotal.toStringAsFixed(0)} FC',
+                                      'Le montant payé doit être >= ${montantMaximum.toStringAsFixed(0)} $devise et <= ${montantTotal.toStringAsFixed(0)} $devise',
                                     ),
                                     backgroundColor: Colors.red,
                                   ),
@@ -624,8 +731,9 @@ class _SeatSelectionScreenState extends State<SeatSelectionScreen> {
       debugPrint('ID Client: ${userData['client_id']}');
       debugPrint('Voyage ID: ${widget.voyage.id}');
       debugPrint('Societe ID: ${widget.voyage.idSociete}');
-      debugPrint('Prix: ${widget.voyage.prix}');
-      final montantTotal = widget.voyage.prix * nombreDePlace;
+      final prixRef = _prixUnitaireReference(widget.voyage);
+      debugPrint('Prix unitaire (réf.): $prixRef');
+      final montantTotal = prixRef * nombreDePlace;
 
       // Créer la requête de réservation avec paiement
       final reservationRequest = ReservationRequest(
@@ -681,6 +789,7 @@ class _SeatSelectionScreenState extends State<SeatSelectionScreen> {
               reservationData: response.reservation,
               paiementData: response.paiement,
               billetData: response.billet,
+              billets: response.billets,
             ),
           ),
         );

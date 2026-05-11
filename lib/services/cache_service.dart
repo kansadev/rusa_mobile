@@ -17,7 +17,10 @@ class CacheService {
   static const String _destinationsBox = 'destinationsBox';
   static const String _busesBox = 'busesBox';
   static const String _authResponseBox = 'authResponseBox';
+  /// V2 : schéma Billet étendu (idReservationPassenger, isUsed) — évite lecture Hive corrompue.
   static const String _reservationWithPaiementBox =
+      'reservationWithPaiementBoxV2';
+  static const String _reservationWithPaiementBoxLegacy =
       'reservationWithPaiementBox';
 
   static Future<void> init() async {
@@ -40,6 +43,9 @@ class CacheService {
       await _openBoxWithRecovery<ReservationWithPaiementResponse>(
         _reservationWithPaiementBox,
       );
+      try {
+        await Hive.deleteBoxFromDisk(_reservationWithPaiementBoxLegacy);
+      } catch (_) {}
 
       debugPrint('HIVE: Initialisation terminée');
     } catch (e) {
@@ -331,6 +337,7 @@ class CacheService {
       await Hive.deleteBoxFromDisk(_busesBox);
       await Hive.deleteBoxFromDisk(_authResponseBox);
       await Hive.deleteBoxFromDisk(_reservationWithPaiementBox);
+      await Hive.deleteBoxFromDisk(_reservationWithPaiementBoxLegacy);
 
       // Fermer toutes les boîtes ouvertes
       await Hive.close();

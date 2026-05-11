@@ -1,4 +1,6 @@
 import 'dart:convert';
+import 'dart:async';
+import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
@@ -9,14 +11,61 @@ import '../models/auth_models.dart';
 import '../models/destination_model.dart';
 import '../models/bus_model.dart';
 import '../models/voyage_model.dart';
+import '../models/devise_model.dart';
+import '../models/categorie_siege_model.dart';
 import '../models/reservation_with_paiement_request.dart';
 import '../models/reservation_with_paiement_response.dart';
+import '../models/reservation_with_passengers_request.dart';
 import '../models/reservation_api_model.dart';
 import 'session_service.dart';
 
+enum ApiEnvironment { dev, staging, production }
+
 class ApiService {
-  static const String baseUrl = 'https://dev-rusatravel.asdc-rdc.org/api';
-  // Pour le développement: static const String baseUrl = 'https://localhost:7110/api';
+  static const String _devBaseUrl = 'https://dev-rusatravel.asdc-rdc.org/api';
+  // Pour le staging:
+  static const String _stagingBaseUrl =
+      'https://uat-rusatravel.asdc-rdc.org/api';
+  static const String _productionBaseUrl = 'https://api.rusatravel.cd/api';
+  static const ApiEnvironment _defaultEnvironment = ApiEnvironment.dev;
+  static String? _lastAuthErrorMessage;
+
+  /// Choix manuel de l'environnement:
+  /// 0 = dev, 1 = staging, 2 = production
+  static const int _environmentIndex = 1;
+
+  // Méthode pour déterminer l'URL de base en fonction de l'environnement
+  static String get baseUrl => _getBaseUrl();
+  static ApiEnvironment get environment =>
+      _getEnvironmentFromIndex(_environmentIndex);
+  static String? get lastAuthErrorMessage => _lastAuthErrorMessage;
+
+  static String _getBaseUrl() {
+    switch (environment) {
+      case ApiEnvironment.dev:
+        return _devBaseUrl;
+      case ApiEnvironment.staging:
+        return _stagingBaseUrl;
+      case ApiEnvironment.production:
+        return _productionBaseUrl;
+    }
+  }
+
+  static ApiEnvironment _getEnvironmentFromIndex(int index) {
+    switch (index) {
+      case 0:
+        return ApiEnvironment.dev;
+      case 1:
+        return ApiEnvironment.staging;
+      case 2:
+        return ApiEnvironment.production;
+      default:
+        debugPrint(
+          'ENV_INDEX invalide ($index). Utilisation de $_defaultEnvironment.',
+        );
+        return _defaultEnvironment;
+    }
+  }
 
   // Méthode pour ajouter le token d'authentification aux requêtes
   static Future<Map<String, String>> _getHeaders({
@@ -24,21 +73,24 @@ class ApiService {
   }) async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final token = prefs.getString('access_token');
+      final token =
+          prefs.getString('access_token') ?? prefs.getString('token') ?? '';
+      final tokenType = prefs.getString('token_type') ?? 'Bearer';
 
-      if (token == null || token.isEmpty) {
-        if (requiresAuth) {
-          throw Exception('Token d\'authentification manquant');
-        }
-        return {'Content-Type': 'application/json', 'Accept': 'application/json'};
-      }
-
-      debugPrint('Token récupéré pour l\'authentification');
-      return {
+      final headers = <String, String>{
         'Content-Type': 'application/json',
         'Accept': 'application/json',
-        'Authorization': 'Bearer $token',
       };
+
+      if (requiresAuth && token.isNotEmpty) {
+        headers['Authorization'] = '$tokenType $token';
+      } else if (requiresAuth) {
+        debugPrint(
+          'Aucun access_token trouve: requete envoyee sans Authorization.',
+        );
+      }
+
+      return headers;
     } catch (e) {
       debugPrint('Erreur lors de la récupération du token: $e');
       rethrow;
@@ -136,7 +188,7 @@ class ApiService {
 
   /// Même inscription que [registerClient], avec code HTTP et corps pour afficher les erreurs (ex. caisse).
   static Future<({int statusCode, Map<String, dynamic>? body})>
-      registerClientWithStatus({
+  registerClientWithStatus({
     required String nomClient,
     required String emailClient,
     required String telephone,
@@ -309,6 +361,16 @@ class ApiService {
               .map((e) => Client.fromJson(Map<String, dynamic>.from(e as Map)))
               .toList();
         }
+        if (decoded is Map<String, dynamic>) {
+          final data = decoded['data'];
+          if (data is List) {
+            return data
+                .map(
+                  (e) => Client.fromJson(Map<String, dynamic>.from(e as Map)),
+                )
+                .toList();
+          }
+        }
       }
       debugPrint('getAllClients: ${response.body}');
       return null;
@@ -373,7 +435,10 @@ class ApiService {
     try {
       final headers = await _getHeaders();
       final response = await http
-          .get(Uri.parse('$baseUrl/Reservation/client/$idClient'), headers: headers)
+          .get(
+            Uri.parse('$baseUrl/Reservation/client/$idClient'),
+            headers: headers,
+          )
           .timeout(const Duration(seconds: 20));
 
       debugPrint(
@@ -500,6 +565,87 @@ class ApiService {
     }
   }
 
+  // Créer une réservation avec passagers + paiement (nouveau contrat)
+  static Future<ReservationWithPaiementResponse?>
+  reservationWithPassengersAndPaiement(
+    ReservationWithPassengersAndPaiementRequest request,
+  ) async {
+    try {
+      final headers = await _getHeaders();
+      final response = await http.post(
+        Uri.parse('$baseUrl/Reservation/with-passengers-and-paiement'),
+        headers: headers,
+        body: jsonEncode(request.toJson()),
+      );
+
+      debugPrint(
+        'Requête réservation passagers+paiement: '
+        '$baseUrl/Reservation/with-passengers-and-paiement',
+      );
+      debugPrint('Données: ${request.toJson()}');
+      debugPrint('Status code: ${response.statusCode}');
+      debugPrint('Response body: ${response.body}');
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final jsonResponse = json.decode(response.body);
+
+        // Nouveau contrat: succès sous forme de liste de billets.
+        if (jsonResponse is List && jsonResponse.isNotEmpty) {
+          final first = jsonResponse.first;
+          if (first is Map<String, dynamic>) {
+            final allBillets = <BilletData>[];
+            for (final item in jsonResponse) {
+              if (item is Map) {
+                allBillets.add(
+                  BilletData.fromJson(Map<String, dynamic>.from(item)),
+                );
+              }
+            }
+            final normalized = Map<String, dynamic>.from(first);
+            normalized['id'] = normalized['id'] ?? normalized['idBillet'] ?? 0;
+            normalized['idBilletEmis'] =
+                normalized['idBilletEmis'] ?? normalized['idBillet'] ?? 0;
+            normalized['dateEmissionBillet'] =
+                normalized['dateEmissionBillet'] ??
+                normalized['dateGeneration'] ??
+                normalized['dateCreation'] ??
+                '';
+            normalized['montantAPaye'] =
+                normalized['montantAPaye'] ?? normalized['prixVoyage'] ?? 0;
+            normalized['montantPaye'] =
+                normalized['montantPaye'] ?? normalized['prixVoyage'] ?? 0;
+            normalized['resteAPaye'] = normalized['resteAPaye'] ?? 0;
+            normalized['methodePaiement'] =
+                normalized['methodePaiement'] ?? 'Mobile Money';
+            normalized['referenceTransaction'] =
+                normalized['referenceTransaction'] ?? '';
+            normalized['message'] =
+                normalized['message'] ?? 'Reservation creee';
+            normalized['transactionId'] = normalized['transactionId'] ?? 'N/A';
+            normalized['statut'] = normalized['statut'] ?? 'Succes';
+
+            return _buildReservationWithPaiementFromFlatObject(
+              normalized,
+              billetsListe: allBillets.isNotEmpty ? allBillets : null,
+            );
+          }
+        }
+
+        // Ancien contrat: objet reservation/paiement/billet.
+        if (jsonResponse is Map<String, dynamic>) {
+          return ReservationWithPaiementResponse.fromJson(jsonResponse);
+        }
+      }
+      return null;
+    } catch (e) {
+      debugPrint(
+        'Erreur lors de la création de la réservation '
+        'avec passagers et paiement: $e',
+      );
+      return null;
+    }
+  }
+
   // Valider un paiement (action caissier)
   static Future<bool> validatePayment(int paiementId) async {
     try {
@@ -547,6 +693,7 @@ class ApiService {
     String emailOuTelephone,
     String motDePasse,
   ) async {
+    _lastAuthErrorMessage = null;
     try {
       final authRequest = AuthRequest(
         emailOuTelephone: emailOuTelephone,
@@ -558,11 +705,13 @@ class ApiService {
       );
       debugPrint('Corps de la requête: ${jsonEncode(authRequest.toJson())}');
 
-      final response = await http.post(
-        Uri.parse('$baseUrl/Utilisateur/authentifier'),
-        headers: await _getHeaders(requiresAuth: false),
-        body: jsonEncode(authRequest.toJson()),
-      );
+      final response = await http
+          .post(
+            Uri.parse('$baseUrl/Utilisateur/authentifier'),
+            headers: await _getHeaders(requiresAuth: false),
+            body: jsonEncode(authRequest.toJson()),
+          )
+          .timeout(const Duration(seconds: 20));
 
       debugPrint('Status code: ${response.statusCode}');
       debugPrint('Réponse brute: ${response.body}');
@@ -588,7 +737,26 @@ class ApiService {
         }
       }
       return null;
+    } on TimeoutException catch (e) {
+      _lastAuthErrorMessage =
+          'Le serveur met trop de temps a repondre. Verifie ta connexion puis reessaie.';
+      debugPrint('Erreur timeout lors de l\'authentification: $e');
+      debugPrint('Type d\'erreur: ${e.runtimeType}');
+      return null;
+    } on SocketException catch (e) {
+      _lastAuthErrorMessage =
+          'Connexion impossible au serveur (${e.osError?.message ?? 'erreur reseau'}).';
+      debugPrint('Erreur reseau lors de l\'authentification: $e');
+      debugPrint('Type d\'erreur: ${e.runtimeType}');
+      return null;
+    } on http.ClientException catch (e) {
+      _lastAuthErrorMessage =
+          'Erreur de communication avec le serveur. Reessaie dans quelques instants.';
+      debugPrint('Erreur client HTTP lors de l\'authentification: $e');
+      debugPrint('Type d\'erreur: ${e.runtimeType}');
+      return null;
     } catch (e) {
+      _lastAuthErrorMessage = 'Erreur inattendue pendant la connexion.';
       debugPrint('Erreur lors de l\'authentification: $e');
       debugPrint('Type d\'erreur: ${e.runtimeType}');
       debugPrint('Stack trace: ${StackTrace.current}');
@@ -597,6 +765,262 @@ class ApiService {
   }
 
   // ========== MÉTHODES DESTINATION ==========
+
+  // ========== MÉTHODES DEVISE ==========
+
+  static Future<List<Devise>> getDevisesActives() async {
+    try {
+      final headers = await _getHeaders();
+      final response = await http.get(
+        Uri.parse('$baseUrl/Devise/devises'),
+        headers: headers,
+      );
+
+      if (response.statusCode == 200) {
+        final decoded = json.decode(response.body);
+        if (decoded is List) {
+          return decoded
+              .map((e) => Devise.fromJson(Map<String, dynamic>.from(e as Map)))
+              .toList();
+        }
+      }
+      return [];
+    } catch (e) {
+      debugPrint('Erreur getDevisesActives: $e');
+      return [];
+    }
+  }
+
+  static Future<bool> setDevisePrincipaleSociete({
+    required int idSociete,
+    required String codeDevise,
+  }) async {
+    try {
+      final headers = await _getHeaders();
+      final response = await http.put(
+        Uri.parse(
+          '$baseUrl/Devise/societe/$idSociete/devise-principale/$codeDevise',
+        ),
+        headers: headers,
+      );
+      return response.statusCode == 200 || response.statusCode == 204;
+    } catch (e) {
+      debugPrint('Erreur setDevisePrincipaleSociete: $e');
+      return false;
+    }
+  }
+
+  static Future<bool> createTauxChange(TauxChange taux) async {
+    try {
+      final headers = await _getHeaders();
+      final response = await http.post(
+        Uri.parse('$baseUrl/Devise/taux-change'),
+        headers: headers,
+        body: jsonEncode(taux.toJson()),
+      );
+      return response.statusCode == 200 || response.statusCode == 201;
+    } catch (e) {
+      debugPrint('Erreur createTauxChange: $e');
+      return false;
+    }
+  }
+
+  static Future<TauxChange?> getTauxChange({
+    required int idSociete,
+    required String source,
+    required String cible,
+  }) async {
+    try {
+      final headers = await _getHeaders();
+      final uri = Uri.parse('$baseUrl/Devise/taux-change').replace(
+        queryParameters: {
+          'idSociete': idSociete.toString(),
+          'source': source,
+          'cible': cible,
+        },
+      );
+      final response = await http.get(uri, headers: headers);
+
+      if (response.statusCode == 200) {
+        final decoded = json.decode(response.body);
+        if (decoded is Map<String, dynamic>) {
+          return TauxChange.fromJson(decoded);
+        }
+      }
+      return null;
+    } catch (e) {
+      debugPrint('Erreur getTauxChange: $e');
+      return null;
+    }
+  }
+
+  static Future<ConversionPreview?> previewConversion({
+    required int idSociete,
+    required String codeDeviseSource,
+    required double montant,
+    required DateTime datePaiement,
+  }) async {
+    try {
+      final headers = await _getHeaders();
+      final uri = Uri.parse('$baseUrl/Devise/preview-conversion').replace(
+        queryParameters: {
+          'idSociete': idSociete.toString(),
+          'codeDeviseSource': codeDeviseSource,
+          'montant': montant.toString(),
+          'datePaiement': datePaiement.toUtc().toIso8601String(),
+        },
+      );
+      final response = await http.get(uri, headers: headers);
+
+      if (response.statusCode == 200) {
+        final decoded = json.decode(response.body);
+        if (decoded is Map<String, dynamic>) {
+          return ConversionPreview.fromJson(decoded);
+        }
+      }
+      return null;
+    } catch (e) {
+      debugPrint('Erreur previewConversion: $e');
+      return null;
+    }
+  }
+
+  // ========== MÉTHODES CATEGORIE SIEGE ==========
+
+  static Future<List<CategorieSiege>> getCategorieSiegesBySociete({
+    required int idSociete,
+    bool actifsSeulement = true,
+  }) async {
+    try {
+      final uri = Uri.parse('$baseUrl/CategorieSiege/societe/$idSociete')
+          .replace(
+        queryParameters: {'actifsSeulement': actifsSeulement.toString()},
+      );
+
+      Future<http.Response> getWithAuth(bool requiresAuth) async {
+        final headers = await _getHeaders(requiresAuth: requiresAuth);
+        return http.get(uri, headers: headers);
+      }
+
+      var response = await getWithAuth(true);
+      // Swagger admin ≠ app client : certains déploiements autorisent ce GET
+      // sans JWT (référentiel) mais renvoient 403 avec un rôle « Client ».
+      if (response.statusCode == 401 || response.statusCode == 403) {
+        debugPrint(
+          'getCategorieSiegesBySociete: HTTP ${response.statusCode} avec auth — '
+          'tentative sans Authorization.',
+        );
+        response = await getWithAuth(false);
+      }
+
+      if (response.statusCode == 200) {
+        final decoded = json.decode(response.body);
+        if (decoded is List) {
+          return decoded
+              .map(
+                (e) => CategorieSiege.fromJson(
+                  Map<String, dynamic>.from(e as Map),
+                ),
+              )
+              .toList();
+        }
+        debugPrint(
+          'getCategorieSiegesBySociete: corps inattendu (pas une liste): '
+          '${response.body.length > 200 ? response.body.substring(0, 200) : response.body}',
+        );
+      } else {
+        debugPrint(
+          'getCategorieSiegesBySociete: HTTP ${response.statusCode} — '
+          '${response.body.length > 300 ? response.body.substring(0, 300) : response.body}',
+        );
+      }
+      return [];
+    } catch (e) {
+      debugPrint('Erreur getCategorieSiegesBySociete: $e');
+      return [];
+    }
+  }
+
+  static Future<CategorieSiege?> getCategorieSiegeById(
+    int idCategorieSiege,
+  ) async {
+    try {
+      final headers = await _getHeaders();
+      final response = await http.get(
+        Uri.parse('$baseUrl/CategorieSiege/$idCategorieSiege'),
+        headers: headers,
+      );
+
+      if (response.statusCode == 200) {
+        final decoded = json.decode(response.body);
+        if (decoded is Map<String, dynamic>) {
+          return CategorieSiege.fromJson(decoded);
+        }
+      }
+      return null;
+    } catch (e) {
+      debugPrint('Erreur getCategorieSiegeById: $e');
+      return null;
+    }
+  }
+
+  static Future<bool> createCategorieSiege(CategorieSiege data) async {
+    try {
+      final headers = await _getHeaders();
+      final response = await http.post(
+        Uri.parse('$baseUrl/CategorieSiege'),
+        headers: headers,
+        body: jsonEncode(data.toJson()),
+      );
+      return response.statusCode == 200 || response.statusCode == 201;
+    } catch (e) {
+      debugPrint('Erreur createCategorieSiege: $e');
+      return false;
+    }
+  }
+
+  static Future<bool> updateCategorieSiege(CategorieSiege data) async {
+    try {
+      final headers = await _getHeaders();
+      final response = await http.put(
+        Uri.parse('$baseUrl/CategorieSiege/${data.idCategorieSiege}'),
+        headers: headers,
+        body: jsonEncode(data.toJson()),
+      );
+      return response.statusCode == 200 || response.statusCode == 204;
+    } catch (e) {
+      debugPrint('Erreur updateCategorieSiege: $e');
+      return false;
+    }
+  }
+
+  static Future<bool> toggleCategorieSiegeStatut(int idCategorieSiege) async {
+    try {
+      final headers = await _getHeaders();
+      final response = await http.put(
+        Uri.parse('$baseUrl/CategorieSiege/$idCategorieSiege/toggle-statut'),
+        headers: headers,
+      );
+      return response.statusCode == 200 || response.statusCode == 204;
+    } catch (e) {
+      debugPrint('Erreur toggleCategorieSiegeStatut: $e');
+      return false;
+    }
+  }
+
+  static Future<bool> deleteCategorieSiege(int idCategorieSiege) async {
+    try {
+      final headers = await _getHeaders();
+      final response = await http.delete(
+        Uri.parse('$baseUrl/CategorieSiege/$idCategorieSiege'),
+        headers: headers,
+      );
+      return response.statusCode == 200 || response.statusCode == 204;
+    } catch (e) {
+      debugPrint('Erreur deleteCategorieSiege: $e');
+      return false;
+    }
+  }
 
   // Récupérer les destinations avec pagination
   static Future<DestinationResponse?> getDestinations({
@@ -650,7 +1074,7 @@ class ApiService {
   static Future<Bus?> getBusById(int idBus) async {
     try {
       final headers = await _getHeaders();
-      final uri = Uri.parse('$baseUrl/Bus/$idBus');
+      final uri = Uri.parse('$baseUrl/Vehicule/$idBus');
 
       debugPrint('Requête bus vers: $uri');
 
@@ -769,6 +1193,41 @@ class ApiService {
     }
   }
 
+  // Récupérer les voyages d'un site (cas caissier)
+  static Future<List<Voyage>> getVoyagesBySite(int idSite) async {
+    try {
+      final headers = await _getHeaders();
+      final uri = Uri.parse('$baseUrl/Voyage/site/$idSite');
+
+      debugPrint('Requête voyages par site vers: $uri');
+
+      final response = await http.get(uri, headers: headers);
+
+      debugPrint('Status code: ${response.statusCode}');
+      debugPrint('Réponse voyages site: ${response.body}');
+
+      if (response.statusCode == 200) {
+        final decoded = json.decode(response.body);
+        if (decoded is List) {
+          final voyages = decoded.map((item) => Voyage.fromJson(item)).toList();
+          debugPrint('Voyages site récupérés: ${voyages.length}');
+          return voyages;
+        }
+        if (decoded is Map<String, dynamic> && decoded['data'] is List) {
+          final list = decoded['data'] as List;
+          final voyages = list.map((item) => Voyage.fromJson(item)).toList();
+          debugPrint('Voyages site récupérés (data): ${voyages.length}');
+          return voyages;
+        }
+      }
+      return [];
+    } catch (e) {
+      debugPrint('Erreur lors de la récupération des voyages par site: $e');
+      debugPrint('Type d\'erreur: ${e.runtimeType}');
+      return [];
+    }
+  }
+
   // Récupérer les voyages pour une destination spécifique
   static Future<List<Voyage>> getVoyagesByDestination(int idDestination) async {
     try {
@@ -845,17 +1304,31 @@ class ApiService {
       if (response.statusCode == 200) {
         final jsonResponse = json.decode(response.body);
 
-        // L'API retourne une liste, prendre le premier élément
+        // L'API retourne une liste (un billet par passager).
         if (jsonResponse is List) {
           if (jsonResponse.isNotEmpty) {
-            dynamic first = jsonResponse.first;
-            if (first is Map<String, dynamic>) {
-              debugPrint('Billet récupéré (premier élément de la liste)');
-              return _buildReservationWithPaiementFromFlatObject(first);
-            } else {
-              debugPrint('Élément de liste inattendu: ${first.runtimeType}');
+            final billetObjects = <BilletData>[];
+            for (final e in jsonResponse) {
+              if (e is Map) {
+                billetObjects.add(
+                  BilletData.fromJson(Map<String, dynamic>.from(e)),
+                );
+              }
+            }
+            if (billetObjects.isEmpty) {
+              debugPrint('Liste de billets sans objet valide');
               return null;
             }
+            final first = Map<String, dynamic>.from(
+              jsonResponse.first as Map,
+            );
+            debugPrint(
+              'Billets récupérés: ${billetObjects.length} pour la réservation',
+            );
+            return _buildReservationWithPaiementFromFlatObject(
+              first,
+              billetsListe: billetObjects,
+            );
           } else {
             debugPrint('Liste de billets vide');
             return null;
@@ -884,7 +1357,9 @@ class ApiService {
   ) async {
     try {
       final headers = await _getHeaders();
-      final uri = Uri.parse('$baseUrl/Billet/qrcode/${Uri.encodeComponent(qrCode)}');
+      final uri = Uri.parse(
+        '$baseUrl/Billet/qrcode/${Uri.encodeComponent(qrCode)}',
+      );
 
       debugPrint('Requête billet par QR vers: $uri');
 
@@ -898,11 +1373,17 @@ class ApiService {
 
         if (jsonResponse is List) {
           if (jsonResponse.isEmpty) return null;
-          final first = jsonResponse.first;
-          if (first is Map<String, dynamic>) {
-            return _buildReservationWithPaiementFromFlatObject(first);
+          final objs = <BilletData>[];
+          for (final e in jsonResponse) {
+            if (e is Map) {
+              objs.add(BilletData.fromJson(Map<String, dynamic>.from(e)));
+            }
           }
-          return null;
+          if (objs.isEmpty) return null;
+          return _buildReservationWithPaiementFromFlatObject(
+            Map<String, dynamic>.from(jsonResponse.first as Map),
+            billetsListe: objs,
+          );
         }
 
         if (jsonResponse is Map<String, dynamic>) {
@@ -916,9 +1397,83 @@ class ApiService {
     }
   }
 
+  /// Marque le passager comme embarqué (caissier / contrôle).
+  static Future<EmbarquerBilletResult> embarquerPassagerBillet({
+    required int idSociete,
+    required int idReservationPassenger,
+    required int idBillet,
+  }) async {
+    if (idSociete <= 0 || idReservationPassenger <= 0 || idBillet <= 0) {
+      return const EmbarquerBilletResult(
+        success: false,
+        message:
+            'Données insuffisantes : société, passager réservation ou billet.',
+      );
+    }
+    try {
+      final uri = Uri.parse(
+        '$baseUrl/Billet/societe/$idSociete/passager/$idReservationPassenger/billet/$idBillet/embarquer',
+      );
+      final headers = await _getHeaders();
+      var response = await http.post(uri, headers: headers);
+      if (response.statusCode == 405) {
+        response = await http.put(uri, headers: headers);
+      }
+
+      debugPrint(
+        'embarquerPassagerBillet: ${response.statusCode} ${response.body}',
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final body = response.body.trim();
+        if (body.isEmpty) {
+          return const EmbarquerBilletResult(
+            success: true,
+            message: 'Embarquement enregistré.',
+          );
+        }
+        final decoded = json.decode(body);
+        if (decoded is Map<String, dynamic>) {
+          BilletData? maj;
+          if (decoded['billet'] is Map<String, dynamic>) {
+            maj = BilletData.fromJson(
+              Map<String, dynamic>.from(decoded['billet'] as Map),
+            );
+          }
+          return EmbarquerBilletResult(
+            success: true,
+            message: 'Embarquement enregistré.',
+            billet: maj,
+          );
+        }
+        return const EmbarquerBilletResult(
+          success: true,
+          message: 'Embarquement enregistré.',
+        );
+      }
+
+      var msg = 'Erreur ${response.statusCode}';
+      try {
+        final decoded = json.decode(response.body);
+        if (decoded is Map) {
+          msg = decoded['detail']?.toString() ??
+              decoded['title']?.toString() ??
+              decoded['message']?.toString() ??
+              msg;
+        }
+      } catch (_) {}
+      return EmbarquerBilletResult(success: false, message: msg);
+    } catch (e) {
+      debugPrint('embarquerPassagerBillet: $e');
+      return EmbarquerBilletResult(success: false, message: e.toString());
+    }
+  }
+
   // Helper: construit ReservationWithPaiementResponse à partir d'un objet plat (format API Billet/reservation/{id})
-  static ReservationWithPaiementResponse
-  _buildReservationWithPaiementFromFlatObject(Map<String, dynamic> data) {
+  static ReservationWithPaiementResponse _buildReservationWithPaiementFromFlatObject(
+    Map<String, dynamic> data, {
+    List<BilletData>? billetsListe,
+  }) {
     //extraire paiement si présent, sinon construire un PaiementData par défaut à partir des champs disponibles
     PaiementData paiement;
     if (data.containsKey('paiement') &&
@@ -953,13 +1508,15 @@ class ApiService {
       billet = BilletData.fromJson(data['billet']);
     } else {
       billet = BilletData(
-        id: data['id'] ?? 0,
+        id: data['idBillet'] ?? data['id'] ?? 0,
         qrCode: data['qrCode'] ?? '',
         dateGeneration: data['dateGeneration'] ?? data['dateCreation'] ?? '',
         idReservation: data['idReservation'] ?? 0,
         idClient: data['idClient'] ?? 1,
         idSociete: data['idSociete'] ?? 1,
         urlBillet: data['urlBillet'] ?? '',
+        idReservationPassenger: data['idReservationPassenger'] ?? 0,
+        isUsed: data['isUsed'] == true,
       );
     }
 
@@ -990,10 +1547,20 @@ class ApiService {
       villeArrivee: data['villeArrivee'],
     );
 
+    final BilletData billetEffectif =
+        (billetsListe != null && billetsListe.isNotEmpty)
+        ? billetsListe.first
+        : billet;
+    final List<BilletData> billetsEffectifs =
+        (billetsListe != null && billetsListe.isNotEmpty)
+        ? billetsListe
+        : <BilletData>[billet];
+
     return ReservationWithPaiementResponse(
       reservation: reservation,
       paiement: paiement,
-      billet: billet,
+      billet: billetEffectif,
+      billets: billetsEffectifs,
       transactionId: data['transactionId'] ?? 'N/A',
       statut: data['statut'] ?? 'Succes',
       message: data['message'] ?? 'Billet récupéré',

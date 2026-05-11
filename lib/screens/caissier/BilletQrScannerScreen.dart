@@ -77,6 +77,7 @@ class _BilletQrScannerScreenState extends State<BilletQrScannerScreen> {
     final paiement = data.paiement;
     final trajet =
         '${reservation.villeDepart ?? '-'} -> ${reservation.villeArrivee ?? '-'}';
+    final messenger = ScaffoldMessenger.of(context);
 
     await showModalBottomSheet<void>(
       context: context,
@@ -86,88 +87,245 @@ class _BilletQrScannerScreenState extends State<BilletQrScannerScreen> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (context) => Padding(
-        padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
-        child: Container(
-          decoration: BoxDecoration(
-            color: const Color(0xFF141A18),
-            borderRadius: BorderRadius.circular(14),
+      builder: (sheetContext) {
+        var embarquementLoading = false;
+        var embarquementOk = false;
+        var embarquementErreur = '';
+        var billetCourant = data.billet;
+
+        return Padding(
+          padding: EdgeInsets.fromLTRB(
+            16,
+            14,
+            16,
+            16 + MediaQuery.paddingOf(sheetContext).bottom,
           ),
-          padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Center(
-                child: Text(
-                  'Billet verifie',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.white,
+          child: StatefulBuilder(
+            builder: (context, setModal) {
+              final b = billetCourant;
+              final idSociete = (b?.idSociete ?? 0) > 0
+                  ? b!.idSociete
+                  : reservation.idSociete;
+              final idPassager = b?.idReservationPassenger ?? 0;
+              final idBillet = b?.id ?? 0;
+              final dejaUtilise = b?.isUsed == true;
+              final peutEmbarquer = b != null &&
+                  !dejaUtilise &&
+                  !embarquementOk &&
+                  idSociete > 0 &&
+                  idPassager > 0 &&
+                  idBillet > 0;
+
+              Future<void> onEmbarquer() async {
+                setModal(() {
+                  embarquementLoading = true;
+                  embarquementErreur = '';
+                });
+                final result = await ApiService.embarquerPassagerBillet(
+                  idSociete: idSociete,
+                  idReservationPassenger: idPassager,
+                  idBillet: idBillet,
+                );
+                if (!mounted) return;
+                setModal(() {
+                  embarquementLoading = false;
+                  if (result.success) {
+                    embarquementOk = true;
+                    if (result.billet != null) {
+                      billetCourant = result.billet;
+                    } else {
+                      final prev = billetCourant;
+                      if (prev != null) {
+                        billetCourant = BilletData(
+                          id: prev.id,
+                          qrCode: prev.qrCode,
+                          dateGeneration: prev.dateGeneration,
+                          idReservation: prev.idReservation,
+                          idClient: prev.idClient,
+                          idSociete: prev.idSociete,
+                          urlBillet: prev.urlBillet,
+                          idReservationPassenger: prev.idReservationPassenger,
+                          isUsed: true,
+                        );
+                      }
+                    }
+                  } else {
+                    embarquementErreur = result.message;
+                    messenger.showSnackBar(
+                      SnackBar(
+                        content: Text(result.message),
+                        backgroundColor: Colors.red,
+                      ),
+                    );
+                  }
+                });
+              }
+
+              return Container(
+                decoration: BoxDecoration(
+                  color: const Color(0xFF141A18),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Center(
+                        child: Text(
+                          'Billet vérifié',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        'Client: ${reservation.nomClient ?? '-'}',
+                        style: const TextStyle(color: Colors.white70),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Téléphone: ${reservation.telephoneClient ?? '-'}',
+                        style: const TextStyle(color: Colors.white70),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Trajet: $trajet',
+                        style: const TextStyle(color: Colors.white70),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Date voyage: ${reservation.dateVoyage ?? '-'}',
+                        style: const TextStyle(color: Colors.white70),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Bus: ${reservation.numeroBus ?? '-'}',
+                        style: const TextStyle(color: Colors.white70),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Montant payé: ${paiement.montantPaye.toStringAsFixed(2)} FC',
+                        style: const TextStyle(color: Colors.white70),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Statut réservation: ${reservation.statutReservation}',
+                        style: const TextStyle(color: Colors.white70),
+                      ),
+                      if (b != null) ...[
+                        const SizedBox(height: 8),
+                        Text(
+                          'Billet n° $idBillet${dejaUtilise ? ' — déjà utilisé' : ''}',
+                          style: const TextStyle(
+                            color: Colors.white54,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                      if (b == null)
+                        const Padding(
+                          padding: EdgeInsets.only(top: 8),
+                          child: Text(
+                            'Détail billet absent : embarquement impossible depuis cet écran.',
+                            style: TextStyle(color: Colors.orange, fontSize: 13),
+                          ),
+                        )
+                      else if (idPassager <= 0)
+                        const Padding(
+                          padding: EdgeInsets.only(top: 8),
+                          child: Text(
+                            'Identifiant passager (réservation) absent : '
+                            'l’API doit renvoyer idReservationPassenger sur le billet.',
+                            style: TextStyle(color: Colors.orange, fontSize: 13),
+                          ),
+                        ),
+                      if (embarquementOk) ...[
+                        const SizedBox(height: 10),
+                        const Row(
+                          children: [
+                            Icon(Icons.check_circle, color: Color(0xFF00E676)),
+                            SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'Passager marqué comme embarqué.',
+                                style: TextStyle(
+                                  color: Color(0xFF00E676),
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                      if (embarquementErreur.isNotEmpty && !embarquementOk)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: Text(
+                            embarquementErreur,
+                            style: const TextStyle(
+                              color: Colors.redAccent,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
+                      const SizedBox(height: 14),
+                      if (peutEmbarquer)
+                        SizedBox(
+                          width: double.infinity,
+                          child: FilledButton.icon(
+                            onPressed: embarquementLoading ? null : onEmbarquer,
+                            icon: embarquementLoading
+                                ? const SizedBox(
+                                    width: 20,
+                                    height: 20,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.white,
+                                    ),
+                                  )
+                                : const Icon(Icons.directions_bus_filled),
+                            label: Text(
+                              embarquementLoading
+                                  ? 'Enregistrement…'
+                                  : 'Marquer comme embarqué',
+                            ),
+                          ),
+                        ),
+                      if (peutEmbarquer) const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton(
+                              onPressed: () =>
+                                  Navigator.pop(sheetContext),
+                              child: const Text('Scanner encore'),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: FilledButton(
+                              onPressed: () {
+                                Navigator.pop(sheetContext);
+                                Navigator.pop(context);
+                              },
+                              child: const Text('Terminer'),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
                   ),
                 ),
-              ),
-              const SizedBox(height: 12),
-              Text(
-                'Client: ${reservation.nomClient ?? '-'}',
-                style: const TextStyle(color: Colors.white70),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                'Telephone: ${reservation.telephoneClient ?? '-'}',
-                style: const TextStyle(color: Colors.white70),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                'Trajet: $trajet',
-                style: const TextStyle(color: Colors.white70),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                'Date voyage: ${reservation.dateVoyage ?? '-'}',
-                style: const TextStyle(color: Colors.white70),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                'Bus: ${reservation.numeroBus ?? '-'}',
-                style: const TextStyle(color: Colors.white70),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                'Montant paye: ${paiement.montantPaye.toStringAsFixed(2)} FC',
-                style: const TextStyle(color: Colors.white70),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                'Statut reservation: ${reservation.statutReservation}',
-                style: const TextStyle(color: Colors.white70),
-              ),
-              const SizedBox(height: 14),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: () => Navigator.pop(context),
-                      child: const Text('Scanner encore'),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: FilledButton(
-                      onPressed: () {
-                        Navigator.pop(context);
-                        Navigator.pop(context);
-                      },
-                      child: const Text('Terminer'),
-                    ),
-                  ),
-                ],
-              ),
-            ],
+              );
+            },
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 

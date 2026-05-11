@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:shimmer/shimmer.dart';
 import 'package:rusa/models/voyage_model.dart';
 import 'package:rusa/services/api_service.dart';
+import 'package:rusa/services/cache_service.dart';
 import 'package:rusa/screens/client/voyageDetails.dart';
 
 class AllVoyagesScreen extends StatefulWidget {
@@ -30,7 +31,17 @@ class _AllVoyagesScreenState extends State<AllVoyagesScreen> {
     });
 
     try {
-      final voyages = await ApiService.getAllVoyages();
+      final auth = await CacheService.getAuthResponse();
+      final primaryRoleName = auth?.primaryRole.nom.toLowerCase().trim() ?? '';
+      final roleName = primaryRoleName.isNotEmpty
+          ? primaryRoleName
+          : (auth?.nomRole.toLowerCase().trim() ?? '');
+      final isCaissier = roleName.contains('caiss');
+      final idSite = auth?.agent?.idSite ?? auth?.utilisateur.idSite ?? 0;
+
+      final voyages = (isCaissier && idSite > 0)
+          ? await ApiService.getVoyagesBySite(idSite)
+          : await ApiService.getAllVoyages();
 
       if (mounted) {
         setState(() {
@@ -50,6 +61,18 @@ class _AllVoyagesScreenState extends State<AllVoyagesScreen> {
 
   Future<void> _refresh() async {
     await _loadVoyages();
+  }
+
+  String _suffixeDevisePrix(Voyage v) {
+    final c = v.codeDevisePrix?.trim();
+    if (c == null || c.isEmpty) return 'FC';
+    return c;
+  }
+
+  double _prixUnitaireReference(Voyage v) {
+    if (v.prix > 0) return v.prix;
+    if (v.tarifs.isEmpty) return 0;
+    return v.tarifs.map((t) => t.prix).reduce((a, b) => a > b ? a : b);
   }
 
   @override
@@ -280,31 +303,6 @@ class _AllVoyagesScreenState extends State<AllVoyagesScreen> {
                     ),
                   ],
                 ),
-                const SizedBox(height: 8),
-                // Prix sur la ligne suivante
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 6,
-                      ),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF00E676).withOpacity(0.2),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Text(
-                        voyage.prixFormatted,
-                        style: const TextStyle(
-                          color: Color(0xFF00E676),
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
                 const SizedBox(height: 16),
                 // Informations horaires et date
                 Row(
@@ -312,7 +310,7 @@ class _AllVoyagesScreenState extends State<AllVoyagesScreen> {
                     Container(
                       padding: const EdgeInsets.all(8),
                       decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.1),
+                        color: Colors.white10,
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: const Icon(
@@ -328,7 +326,7 @@ class _AllVoyagesScreenState extends State<AllVoyagesScreen> {
                         Text(
                           'Départ',
                           style: TextStyle(
-                            color: Colors.white.withOpacity(0.7),
+                            color: Colors.white.withOpacity(0.54),
                             fontSize: 12,
                           ),
                         ),
@@ -346,7 +344,7 @@ class _AllVoyagesScreenState extends State<AllVoyagesScreen> {
                     Container(
                       padding: const EdgeInsets.all(8),
                       decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.1),
+                        color: Colors.white10,
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: const Icon(
@@ -362,12 +360,14 @@ class _AllVoyagesScreenState extends State<AllVoyagesScreen> {
                         Text(
                           'Date',
                           style: TextStyle(
-                            color: Colors.white.withOpacity(0.7),
+                            color: Colors.white.withOpacity(0.54),
                             fontSize: 12,
                           ),
                         ),
                         Text(
-                          voyage.date,
+                          voyage.dateDepart.length >= 10
+                              ? voyage.dateDepart.substring(0, 10)
+                              : voyage.dateDepart,
                           style: const TextStyle(
                             color: Colors.white,
                             fontSize: 16,
@@ -378,54 +378,167 @@ class _AllVoyagesScreenState extends State<AllVoyagesScreen> {
                     ),
                   ],
                 ),
-                const SizedBox(height: 12),
-                // Informations supplémentaires
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(4),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: Icon(
-                        Icons.directions_bus,
-                        color: Colors.white.withOpacity(0.7),
-                        size: 12,
-                      ),
+                if (voyage.tarifs.isNotEmpty) ...[
+                  const SizedBox(height: 14),
+                  Text(
+                    'Tarifs par classe',
+                    style: TextStyle(
+                      color: Colors.white.withOpacity(0.54),
+                      fontSize: 12,
                     ),
-                    const SizedBox(width: 4),
-                    Text(
-                      'Bus ${voyage.numeroBus}',
-                      style: TextStyle(
-                        color: Colors.white.withOpacity(0.7),
-                        fontSize: 12,
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    if (voyage.nomSociete != null &&
-                        voyage.nomSociete!.isNotEmpty) ...[
+                  ),
+                  const SizedBox(height: 6),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: voyage.tarifs
+                        .map(
+                          (t) => Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 6,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.white10,
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(color: Colors.white12),
+                            ),
+                            child: Text(
+                              '${t.libelle}: ${t.prix.toStringAsFixed(0)} ${_suffixeDevisePrix(voyage)}',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                        )
+                        .toList(),
+                  ),
+                ] else ...[
+                  const SizedBox(height: 14),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
                       Container(
-                        padding: const EdgeInsets.all(4),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 6,
+                        ),
                         decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(4),
+                          color: const Color(0xFF00E676).withOpacity(0.2),
+                          borderRadius: BorderRadius.circular(12),
                         ),
-                        child: Icon(
-                          Icons.business,
-                          color: Colors.white.withOpacity(0.7),
-                          size: 12,
-                        ),
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        voyage.nomSociete!,
-                        style: TextStyle(
-                          color: Colors.white.withOpacity(0.7),
-                          fontSize: 12,
+                        child: Text(
+                          _prixUnitaireReference(voyage) > 0
+                              ? '${_prixUnitaireReference(voyage).toStringAsFixed(0)} ${_suffixeDevisePrix(voyage)}'
+                              : 'Tarif sur demande',
+                          style: TextStyle(
+                            color: _prixUnitaireReference(voyage) > 0
+                                ? const Color(0xFF00E676)
+                                : Colors.white54,
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                       ),
                     ],
+                  ),
+                ],
+                const SizedBox(height: 12),
+                // Bus, société, site (Wrap pour petits écrans)
+                Wrap(
+                  spacing: 12,
+                  runSpacing: 8,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(4),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Icon(
+                            Icons.directions_bus,
+                            color: Colors.white.withOpacity(0.7),
+                            size: 12,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          'Bus ${voyage.numeroBus}',
+                          style: TextStyle(
+                            color: Colors.white.withOpacity(0.7),
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (voyage.nomSociete != null &&
+                        voyage.nomSociete!.isNotEmpty)
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(4),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Icon(
+                              Icons.business,
+                              color: Colors.white.withOpacity(0.7),
+                              size: 12,
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 140),
+                            child: Text(
+                              voyage.nomSociete!,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: Colors.white.withOpacity(0.7),
+                                fontSize: 12,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    if (voyage.nomSite != null &&
+                        voyage.nomSite!.trim().isNotEmpty)
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(4),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Icon(
+                              Icons.storefront_outlined,
+                              color: Colors.white.withOpacity(0.7),
+                              size: 12,
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 140),
+                            child: Text(
+                              voyage.nomSite!.trim(),
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: Colors.white.withOpacity(0.7),
+                                fontSize: 12,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                   ],
                 ),
               ],

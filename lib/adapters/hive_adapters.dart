@@ -195,30 +195,76 @@ class BusAdapter extends TypeAdapter<Bus> {
 
   @override
   Bus read(BinaryReader reader) {
+    int asInt(dynamic value) {
+      if (value is int) return value;
+      if (value is num) return value.toInt();
+      if (value is String) return int.tryParse(value) ?? 0;
+      return 0;
+    }
+
+    String asString(dynamic value) {
+      if (value == null) return '';
+      return value.toString();
+    }
+
+    bool asBool(dynamic value) {
+      if (value is bool) return value;
+      if (value is num) return value != 0;
+      if (value is String) {
+        final v = value.toLowerCase().trim();
+        return v == 'true' || v == '1';
+      }
+      return false;
+    }
+
+    final idVehicule = asInt(reader.read());
+    final marques = asString(reader.read());
+    final thirdField = reader.read();
+    final fourthField = reader.read();
+    final fifthField = reader.read();
+    final nombreSiege = asInt(reader.read());
+    final idSociete = asInt(reader.read());
+    final numeroDePlaque = asString(reader.read());
+    final photo = asString(reader.read());
+    final statut = asBool(reader.read());
+    final dateCreation = asString(reader.read());
+    final dateModificationRaw = reader.read();
+    final nomSociete = asString(reader.read());
+
+    // Compatibilité:
+    // - ancien format: (numeroBus:int, idTypeBus:int, libelleTypeBus:String)
+    // - nouveau format: (aliasVehicule:String, idTypeVehicule:int, libelleTypeVehicule:String?)
+    final aliasVehicule =
+        thirdField is String ? thirdField : asString(thirdField);
+    final idTypeVehicule = asInt(fourthField);
+    final libelleTypeVehicule = asString(fifthField);
+    final dateModification = asString(dateModificationRaw);
+
     return Bus(
-      idBus: reader.readInt(),
-      marques: reader.readString(),
-      numeroBus: reader.readInt(),
-      idTypeBus: reader.readInt(),
-      libelleTypeBus: reader.readString(),
-      nombreSiege: reader.readInt(),
-      idSociete: reader.readInt(),
-      numeroDePlaque: reader.readString(),
-      photo: reader.readString(),
-      statut: reader.readBool(),
-      dateCreation: reader.readString(),
-      dateModification: reader.readString(),
-      nomSociete: reader.readString(),
+      idVehicule: idVehicule,
+      marques: marques,
+      aliasVehicule: aliasVehicule,
+      idTypeVehicule: idTypeVehicule,
+      libelleTypeVehicule:
+          libelleTypeVehicule.isEmpty ? null : libelleTypeVehicule,
+      nombreSiege: nombreSiege,
+      idSociete: idSociete,
+      numeroDePlaque: numeroDePlaque,
+      photo: photo,
+      statut: statut,
+      dateCreation: dateCreation,
+      dateModification: dateModification.isEmpty ? null : dateModification,
+      nomSociete: nomSociete,
     );
   }
 
   @override
   void write(BinaryWriter writer, Bus obj) {
-    writer.writeInt(obj.idBus);
+    writer.writeInt(obj.idVehicule);
     writer.writeString(obj.marques);
-    writer.writeInt(obj.numeroBus);
-    writer.writeInt(obj.idTypeBus);
-    writer.writeString(obj.libelleTypeBus ?? '');
+    writer.writeString(obj.aliasVehicule);
+    writer.writeInt(obj.idTypeVehicule);
+    writer.writeString(obj.libelleTypeVehicule ?? '');
     writer.writeInt(obj.nombreSiege);
     writer.writeInt(obj.idSociete);
     writer.writeString(obj.numeroDePlaque);
@@ -526,8 +572,12 @@ class ReservationWithPaiementResponseAdapter
               idClient: reader.readInt(),
               idSociete: reader.readInt(),
               urlBillet: reader.readString(),
+              idReservationPassenger: reader.readInt(),
+              isUsed: reader.readBool(),
             )
           : null,
+      // Liste multi-billets non persistée (compatibilité boîte Hive existante).
+      billets: const [],
       transactionId: reader.readString(),
       statut: reader.readString(),
       message: reader.readString(),
@@ -583,6 +633,8 @@ class ReservationWithPaiementResponseAdapter
       writer.writeInt(obj.billet!.idClient);
       writer.writeInt(obj.billet!.idSociete);
       writer.writeString(obj.billet!.urlBillet);
+      writer.writeInt(obj.billet!.idReservationPassenger);
+      writer.writeBool(obj.billet!.isUsed);
     }
 
     writer.writeString(obj.transactionId);

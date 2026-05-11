@@ -77,10 +77,7 @@ class _SearchTripScreenState extends State<SearchTripScreen> {
     final entries = counts.entries.toList()
       ..sort((a, b) => b.value.compareTo(a.value));
 
-    return entries
-        .take(maxTags)
-        .map((e) => display[e.key] ?? e.key)
-        .toList();
+    return entries.take(maxTags).map((e) => display[e.key] ?? e.key).toList();
   }
 
   String _formatCityLabel(String raw) {
@@ -112,10 +109,10 @@ class _SearchTripScreenState extends State<SearchTripScreen> {
         Text(
           'Plus demandés',
           style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                color: Colors.white70,
-                fontWeight: FontWeight.w600,
-                fontSize: 15,
-              ),
+            color: Colors.white70,
+            fontWeight: FontWeight.w600,
+            fontSize: 15,
+          ),
         ),
         const SizedBox(height: 10),
         SizedBox(
@@ -126,8 +123,7 @@ class _SearchTripScreenState extends State<SearchTripScreen> {
             separatorBuilder: (context, index) => const SizedBox(width: 8),
             itemBuilder: (context, index) {
               final city = tags[index];
-              final isSelected =
-                  selectedNorm == city.trim().toLowerCase();
+              final isSelected = selectedNorm == city.trim().toLowerCase();
               return FilterChip(
                 label: Text(
                   city,
@@ -142,9 +138,7 @@ class _SearchTripScreenState extends State<SearchTripScreen> {
                 backgroundColor: const Color(0xFF2A2A2A),
                 selectedColor: const Color(0xFF00E676),
                 side: BorderSide(
-                  color: isSelected
-                      ? const Color(0xFF00E676)
-                      : Colors.white24,
+                  color: isSelected ? const Color(0xFF00E676) : Colors.white24,
                 ),
                 padding: const EdgeInsets.symmetric(horizontal: 4),
                 onSelected: (selected) {
@@ -225,7 +219,9 @@ class _SearchTripScreenState extends State<SearchTripScreen> {
       setState(() {
         _voyages = cachedVoyages;
       });
-      debugPrint('ACCUEIL: cache rechargé après délai (${cachedVoyages.length})');
+      debugPrint(
+        'ACCUEIL: cache rechargé après délai (${cachedVoyages.length})',
+      );
     }
   }
 
@@ -432,23 +428,7 @@ class _SearchTripScreenState extends State<SearchTripScreen> {
           Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (context) => SeatSelectionScreen(
-                voyage: Voyage(
-                  id: voyage.id,
-                  dateDepart: voyage.dateDepart,
-                  heureDepart: voyage.heureDepart,
-                  prix: voyage.prix,
-                  idBus: voyage.idBus,
-                  idDestination: voyage.idDestination,
-                  idSociete: voyage.idSociete,
-                  statut: voyage.statut,
-                  dateCreation: voyage.dateCreation,
-                  numeroBus: voyage.numeroBus,
-                  libelleTypeBus: voyage.libelleTypeBus,
-                  villeDepart: voyage.villeDepart,
-                  villeArrivee: voyage.villeArrivee,
-                ),
-              ),
+              builder: (context) => SeatSelectionScreen(voyage: voyage),
             ),
           );
         },
@@ -563,6 +543,41 @@ class _SearchTripScreenState extends State<SearchTripScreen> {
                   ),
                 ],
               ),
+              if (voyage.tarifs.isNotEmpty) ...[
+                const SizedBox(height: 14),
+                Text(
+                  'Tarifs par catégorie',
+                  style: TextStyle(color: Colors.white54, fontSize: 12),
+                ),
+                const SizedBox(height: 6),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: voyage.tarifs
+                      .map(
+                        (t) => Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.white10,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: Colors.white12),
+                          ),
+                          child: Text(
+                            '${t.libelle}: ${t.prix.toStringAsFixed(0)} FC',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                      )
+                      .toList(),
+                ),
+              ],
             ],
           ),
         ),
