@@ -4,6 +4,7 @@ import 'package:shimmer/shimmer.dart';
 import '../../models/reservation_api_model.dart';
 import 'package:rusa/services/api_service.dart';
 import 'package:rusa/services/cache_service.dart';
+import 'package:rusa/widgets/truncated_text.dart';
 import 'package:rusa/services/session_service.dart';
 import 'package:rusa/screens/client/TicketReceiptScreen.dart';
 
@@ -554,7 +555,7 @@ class _ReservationsScreenState extends State<ReservationsScreen> {
                               fontSize: 12,
                             ),
                           ),
-                          Text(
+                          TruncatedText(
                             reservation.villeDepart,
                             style: const TextStyle(
                               color: Color(0xFF00E676),
@@ -565,10 +566,13 @@ class _ReservationsScreenState extends State<ReservationsScreen> {
                         ],
                       ),
                     ),
-                    const Icon(
-                      Icons.arrow_forward,
-                      color: Color(0xFF00E676),
-                      size: 20,
+                    const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 8),
+                      child: Icon(
+                        Icons.arrow_forward,
+                        color: Color(0xFF00E676),
+                        size: 20,
+                      ),
                     ),
                     Expanded(
                       child: Column(
@@ -581,8 +585,9 @@ class _ReservationsScreenState extends State<ReservationsScreen> {
                               fontSize: 12,
                             ),
                           ),
-                          Text(
+                          TruncatedText(
                             reservation.villeArrivee,
+                            textAlign: TextAlign.end,
                             style: const TextStyle(
                               color: Color(0xFF00E676),
                               fontSize: 18,

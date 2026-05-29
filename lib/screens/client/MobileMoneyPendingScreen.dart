@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:rusa/models/reservation_with_passengers_request.dart';
@@ -33,6 +35,9 @@ class _MobileMoneyPendingScreenState extends State<MobileMoneyPendingScreen> {
   FlexPayPaymentTracker? _paymentTracker;
   String? _orderNumberFlexPay;
   DateTime? _holdExpireAt;
+  Timer? _countdownTimer;
+  Duration? _remaining;
+  Duration? _holdTotal;
 
   String get _paymentMethodTitle {
     final method = widget.request.paiement.methodePaiement.trim().toUpperCase();
@@ -60,6 +65,7 @@ class _MobileMoneyPendingScreenState extends State<MobileMoneyPendingScreen> {
 
   @override
   void dispose() {
+    _countdownTimer?.cancel();
     _paymentTracker?.dispose();
     super.dispose();
   }
@@ -73,7 +79,10 @@ class _MobileMoneyPendingScreenState extends State<MobileMoneyPendingScreen> {
       _error = null;
       _orderNumberFlexPay = null;
       _holdExpireAt = null;
+      _remaining = null;
+      _holdTotal = null;
     });
+    _countdownTimer?.cancel();
 
     final result = await ApiService.reservationWithPassengersAndPaiement(
       widget.request,
@@ -125,6 +134,7 @@ class _MobileMoneyPendingScreenState extends State<MobileMoneyPendingScreen> {
 
     _orderNumberFlexPay = order;
     _holdExpireAt = holdExpire;
+    _startCountdown();
 
     _paymentTracker?.dispose();
     _paymentTracker = FlexPayPaymentTracker(
@@ -150,6 +160,35 @@ class _MobileMoneyPendingScreenState extends State<MobileMoneyPendingScreen> {
       final verify = await ApiService.verifyFlexPayOrder(_orderNumberFlexPay!);
       resolved = verify.reservation;
     }
+
+    // Dès qu'on a l'idReservation, on récupère directement les billets (QR)
+    // via GET /api/Billet/reservation/{id}, sans dépendre du contenu du
+    // verifier. On fusionne avec la réservation riche (villes, heure, prix)
+    // si elle est disponible.
+    final idReservation = resolved?.reservation.idReservation ?? 0;
+    if (idReservation > 0) {
+      final billetResp = await ApiService.getBilletByReservation(idReservation);
+      if (billetResp != null &&
+          (billetResp.billets.isNotEmpty || billetResp.billet != null)) {
+        final hasRichReservation =
+            (resolved?.reservation.villeDepart?.trim().isNotEmpty ?? false) ||
+            (resolved?.reservation.villeArrivee?.trim().isNotEmpty ?? false);
+        resolved = ReservationWithPaiementResponse(
+          reservation: hasRichReservation
+              ? resolved!.reservation
+              : billetResp.reservation,
+          paiement: resolved?.paiement ?? billetResp.paiement,
+          billet: billetResp.billet,
+          billets: billetResp.billets,
+          transactionId: resolved?.transactionId ?? billetResp.transactionId,
+          statut: resolved?.statut ?? billetResp.statut,
+          message: resolved?.message ?? billetResp.message,
+          dateCreation: resolved?.dateCreation ?? billetResp.dateCreation,
+        );
+      }
+    }
+
+    if (!mounted) return;
 
     setState(() {
       _isTrackingPayment = false;
@@ -223,13 +262,93 @@ class _MobileMoneyPendingScreenState extends State<MobileMoneyPendingScreen> {
     return 'Validez le paiement sur votre téléphone. La réservation sera créée après confirmation.';
   }
 
-  String? _holdExpireLabel() {
+  /// Démarre le compte à rebours qui se rafraîchit chaque seconde jusqu'à
+  /// [_holdExpireAt]. À 0, le suivi temps réel se charge déjà de l'expiration.
+  void _startCountdown() {
+    _countdownTimer?.cancel();
     final expire = _holdExpireAt;
-    if (expire == null) return null;
-    final local = expire.toLocal();
-    final h = local.hour.toString().padLeft(2, '0');
-    final m = local.minute.toString().padLeft(2, '0');
-    return 'Expire à $h:$m';
+    if (expire == null) {
+      _remaining = null;
+      _holdTotal = null;
+      return;
+    }
+    final total = expire.difference(DateTime.now());
+    _holdTotal = total.isNegative ? Duration.zero : total;
+    void tick() {
+      if (!mounted) return;
+      final left = expire.difference(DateTime.now());
+      setState(() => _remaining = left.isNegative ? Duration.zero : left);
+      if (left.isNegative) _countdownTimer?.cancel();
+    }
+
+    tick();
+    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (_) => tick());
+  }
+
+  /// Temps restant (ou null si pas de délai).
+  Duration? get _timeLeft {
+    if (_holdExpireAt == null) return null;
+    final left = _remaining ?? _holdExpireAt!.difference(DateTime.now());
+    return left.isNegative ? Duration.zero : left;
+  }
+
+  /// Horloge courte affichée au centre du cercle : « 04:32 » (ou « 1:04:32 »).
+  String _countdownClock(Duration left) {
+    final h = left.inHours;
+    final m = left.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final s = left.inSeconds.remainder(60).toString().padLeft(2, '0');
+    return h > 0 ? '$h:$m:$s' : '$m:$s';
+  }
+
+  /// Cercle de compte à rebours : un anneau de progression qui se vide au fur
+  /// et à mesure, avec le temps restant au centre.
+  Widget _buildCountdownCircle() {
+    final left = _timeLeft!;
+    final expired = left <= Duration.zero;
+    final total = _holdTotal;
+    final progress = (total != null && total.inMilliseconds > 0)
+        ? (left.inMilliseconds / total.inMilliseconds).clamp(0.0, 1.0)
+        : 0.0;
+    final color = expired ? Colors.redAccent : const Color(0xFF00E676);
+
+    return SizedBox(
+      width: 110,
+      height: 110,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          SizedBox(
+            width: 110,
+            height: 110,
+            child: TweenAnimationBuilder<double>(
+              tween: Tween(begin: progress, end: progress),
+              duration: const Duration(milliseconds: 500),
+              builder: (context, value, _) => CircularProgressIndicator(
+                value: value,
+                strokeWidth: 6,
+                backgroundColor: Colors.white12,
+                valueColor: AlwaysStoppedAnimation<Color>(color),
+              ),
+            ),
+          ),
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.timer_outlined, size: 18, color: color),
+              const SizedBox(height: 2),
+              Text(
+                expired ? 'Expiré' : _countdownClock(left),
+                style: GoogleFonts.poppins(
+                  color: color,
+                  fontSize: expired ? 14 : 20,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
   }
 
   String? get _paymentUrl {
@@ -428,16 +547,9 @@ class _MobileMoneyPendingScreenState extends State<MobileMoneyPendingScreen> {
                         ),
                       ),
                     ],
-                    if (_holdExpireLabel() != null) ...[
-                      const SizedBox(height: 6),
-                      Text(
-                        _holdExpireLabel()!,
-                        textAlign: TextAlign.center,
-                        style: GoogleFonts.poppins(
-                          color: Colors.white38,
-                          fontSize: 11,
-                        ),
-                      ),
+                    if (_timeLeft != null) ...[
+                      const SizedBox(height: 18),
+                      Center(child: _buildCountdownCircle()),
                     ],
                     if (_paymentUrl != null) ...[
                       const SizedBox(height: 14),

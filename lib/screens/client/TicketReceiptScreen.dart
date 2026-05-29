@@ -463,8 +463,16 @@ class _TicketReceiptScreenState extends State<TicketReceiptScreen> {
     final time = _formatTimeFromString(
       widget.reservationData?.heureVoyage?.formattedTime,
     );
-    final price =
-        '${widget.paiementData?.montantPaye.toStringAsFixed(0) ?? '0'} FC';
+    // Le paiement Mobile Money peut renvoyer montantPaye=0 tant que la réponse
+    // reste « en attente ». On retombe alors sur montantAPaye, puis sur le
+    // prixVoyage de la réservation (présent dans le billet confirmé).
+    final montantPaye = widget.paiementData?.montantPaye ?? 0;
+    final montantAPaye = widget.paiementData?.montantAPaye ?? 0;
+    final prixVoyage = widget.reservationData?.prixVoyage ?? 0;
+    final montantAffiche = montantPaye > 0
+        ? montantPaye
+        : (montantAPaye > 0 ? montantAPaye : prixVoyage);
+    final price = '${montantAffiche.toStringAsFixed(0)} FC';
     final passengerName =
         widget.reservationData?.nomClient ??
         widget.reservationData?.nomUtilisateur ??

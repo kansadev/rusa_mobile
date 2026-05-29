@@ -542,6 +542,31 @@ class _SeatSelectionScreenState extends State<SeatSelectionScreen> {
                   ),
                 ),
               ],
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Icon(
+                    Icons.event_seat_rounded,
+                    size: 16,
+                    color: widget.voyage.placesDisponiblesTotal > 0
+                        ? const Color(0xFF00E676)
+                        : Colors.redAccent,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    widget.voyage.placesDisponiblesTotal > 0
+                        ? '${widget.voyage.placesDisponiblesTotal} place${widget.voyage.placesDisponiblesTotal > 1 ? 's' : ''} disponible${widget.voyage.placesDisponiblesTotal > 1 ? 's' : ''}'
+                        : 'Aucune place disponible',
+                    style: TextStyle(
+                      color: widget.voyage.placesDisponiblesTotal > 0
+                          ? Colors.white
+                          : Colors.redAccent,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
             ],
           ),
         ),
@@ -639,38 +664,47 @@ class _SeatSelectionScreenState extends State<SeatSelectionScreen> {
         SizedBox(
           width: double.infinity,
           height: 50,
-          child: ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: isPassed
-                  ? Colors.white24
-                  : const Color(0xFF00E676),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(20),
-              ),
-            ),
-            onPressed: isPassed
-                ? null
-                : () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => ReservationFormScreen(
-                          voyage: widget.voyage,
-                          client: widget.client,
-                        ),
-                      ),
-                    );
-                  },
-            child: Text(
-              isPassed
-                  ? 'Voyage passé'
-                  : (_isVenteCaissier ? 'Vendre le billet' : 'Réserver'),
-              style: TextStyle(
-                color: isPassed ? Colors.white70 : Colors.black,
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
+          child: Builder(
+            builder: (context) {
+              final bool isComplet =
+                  widget.voyage.placesDisponiblesTotal <= 0;
+              final bool isDisabled = isPassed || isComplet;
+              return ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: isDisabled
+                      ? Colors.white24
+                      : const Color(0xFF00E676),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                ),
+                onPressed: isDisabled
+                    ? null
+                    : () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => ReservationFormScreen(
+                              voyage: widget.voyage,
+                              client: widget.client,
+                            ),
+                          ),
+                        );
+                      },
+                child: Text(
+                  isPassed
+                      ? 'Voyage passé'
+                      : isComplet
+                      ? 'Complet'
+                      : (_isVenteCaissier ? 'Vendre le billet' : 'Réserver'),
+                  style: TextStyle(
+                    color: isDisabled ? Colors.white70 : Colors.black,
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              );
+            },
           ),
         ),
       ],

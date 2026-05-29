@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:rusa/models/voyage_sieges_disponibles_model.dart';
+import 'package:rusa/screens/Bus3DViewScreen.dart';
 import 'package:rusa/services/api_service.dart';
 
 enum _SeatStatus { available, occupied, empty }
@@ -249,6 +250,20 @@ class _SeatViewScreenState extends State<SeatViewScreen> {
           ],
         ),
         centerTitle: true,
+        actions: [
+          IconButton(
+            tooltip: 'Aperçu 3D du bus',
+            icon: const Icon(Icons.view_in_ar_rounded, color: Color(0xFF00E676)),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const Bus3DViewScreen(),
+                ),
+              );
+            },
+          ),
+        ],
       ),
       body: _buildBody(),
     );

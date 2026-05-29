@@ -236,79 +236,56 @@ class ApiService {
   }
 
   static FlexPayPaymentState _flexPayStateFromMap(Map<String, dynamic> map) {
-    final alreadyProcessed = map['alreadyProcessed'];
-    final hasReservation = _flexPayHasReservationId(map);
+    final status = _flexPayStatusString(map);
 
-    // Contrat observé UAT : tant que alreadyProcessed == false, le paiement
-    // est encore en cours (même si message contient « refusé » par erreur).
-    if (alreadyProcessed == false) {
-      return FlexPayPaymentState.pending;
-    }
-
-    if (alreadyProcessed == true) {
-      if (hasReservation ||
-          map['estPaye'] == true ||
-          map['isPaid'] == true ||
-          map['paymentConfirmed'] == true ||
-          map['paiementConfirme'] == true) {
-        return FlexPayPaymentState.confirmed;
-      }
-      if (map['estEchec'] == true ||
-          map['isFailed'] == true ||
-          map['paymentFailed'] == true ||
-          map['echec'] == true) {
+    // 1. DTO unifié (succès) : présence de la clé `reservation`.
+    //    Le statut string distingue Succes / Echec / Annule.
+    if (map['reservation'] is Map) {
+      if (_statusIndicatesFailure(status)) {
         return FlexPayPaymentState.failed;
       }
-      final terminalStatus = _flexPayStatusString(map);
-      if (_statusIndicatesFailure(terminalStatus)) {
-        return FlexPayPaymentState.failed;
+      if (status.contains('expir')) {
+        return FlexPayPaymentState.expired;
       }
-      if (_statusIndicatesSuccess(terminalStatus)) {
-        return FlexPayPaymentState.confirmed;
-      }
-      // Traité mais sans réservation → échec terminal explicite.
-      return FlexPayPaymentState.failed;
-    }
-
-    if (map['estEchec'] == true ||
-        map['isFailed'] == true ||
-        map['paymentFailed'] == true ||
-        map['echec'] == true) {
-      return FlexPayPaymentState.failed;
-    }
-
-    if (map['estPaye'] == true ||
-        map['isPaid'] == true ||
-        map['paymentConfirmed'] == true ||
-        map['paiementConfirme'] == true) {
+      // Succes / SuccesPaiementPartiel / EnAttente improbable ici → confirmé.
       return FlexPayPaymentState.confirmed;
     }
 
-    final status = _flexPayStatusString(map);
+    // 2. En attente explicite : ne pas afficher d'échec.
+    if (map['paymentPending'] == true || _statusIndicatesPending(status)) {
+      return FlexPayPaymentState.pending;
+    }
+
+    // 3. Statut court (clé `success`) sans réservation.
+    if (map.containsKey('success') || map.containsKey('paymentPending')) {
+      if (_statusIndicatesFailure(status) ||
+          _statusIndicatesFailure(
+            map['message']?.toString().toLowerCase() ?? '',
+          )) {
+        return FlexPayPaymentState.failed;
+      }
+      // paymentPending explicitement false + pas de réservation → échec.
+      if (map['paymentPending'] == false) {
+        return FlexPayPaymentState.failed;
+      }
+      // Sinon (success sans info claire) → continuer le polling.
+      return FlexPayPaymentState.pending;
+    }
 
     if (_statusIndicatesFailure(status)) {
       return FlexPayPaymentState.failed;
     }
-
-    if (_statusIndicatesSuccess(status)) {
-      return FlexPayPaymentState.confirmed;
-    }
-
-    if (status.contains('expir')) {
-      return FlexPayPaymentState.expired;
-    }
-
-    if (hasReservation) {
-      return FlexPayPaymentState.confirmed;
-    }
-
-    if (map.containsKey('reservation') ||
-        map.containsKey('billet') ||
-        map.containsKey('billets')) {
+    if (_statusIndicatesSuccess(status) || _flexPayHasReservationId(map)) {
       return FlexPayPaymentState.confirmed;
     }
 
     return FlexPayPaymentState.pending;
+  }
+
+  static bool _statusIndicatesPending(String status) {
+    return status.contains('attente') ||
+        status.contains('pending') ||
+        status == 'enattente';
   }
 
   static bool _flexPayHasReservationId(Map<String, dynamic> map) {
@@ -396,6 +373,52 @@ class ApiService {
       );
     }
     return null;
+  }
+
+  /// Secours : `GET /api/Reservation/{idReservation}` pour récupérer les
+  /// billets si `verifier` renvoie un succès sans `billets`.
+  static Future<ReservationWithPaiementResponse?> getReservationWithPaiement(
+    int idReservation,
+  ) async {
+    if (idReservation <= 0) return null;
+    try {
+      final headers = await _getHeaders();
+      final uri = Uri.parse('$baseUrl/Reservation/$idReservation');
+      final response = await http.get(uri, headers: headers);
+      debugPrint(
+        'GET réservation $idReservation: ${response.statusCode} ${response.body}',
+      );
+
+      if (response.statusCode != 200) return null;
+
+      dynamic decoded;
+      try {
+        decoded = json.decode(response.body);
+      } catch (_) {
+        return null;
+      }
+
+      if (decoded is Map<String, dynamic>) {
+        return _tryParseReservationFromFlexPayMap(decoded);
+      }
+      if (decoded is List && decoded.isNotEmpty) {
+        final billets = <BilletData>[];
+        for (final item in decoded) {
+          if (item is Map) {
+            billets.add(BilletData.fromJson(Map<String, dynamic>.from(item)));
+          }
+        }
+        final first = Map<String, dynamic>.from(decoded.first as Map);
+        return _buildReservationWithPaiementFromFlatObject(
+          first,
+          billetsListe: billets.isNotEmpty ? billets : null,
+        );
+      }
+      return null;
+    } catch (e) {
+      debugPrint('getReservationWithPaiement: $e');
+      return null;
+    }
   }
 
   static String? _orderNumberFromSignalRPayload(dynamic payload) {
@@ -1076,6 +1099,7 @@ class ApiService {
 
     final orderNumber = (map['orderNumberFlexPay'] ??
             paiement['orderNumberFlexPay'] ??
+            map['transactionId'] ??
             paiement['referenceTransaction'])
         ?.toString()
         .trim();

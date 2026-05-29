@@ -7,8 +7,10 @@ import 'package:rusa/services/api_service.dart';
 import 'package:rusa/services/cache_service.dart';
 import 'package:rusa/widgets/voyage_periode_selector.dart';
 import 'package:rusa/widgets/caissier_client_picker_sheet.dart';
+import 'package:rusa/widgets/truncated_text.dart';
 import 'package:rusa/utils/voyage_periode_filter.dart';
 import 'package:rusa/screens/client/voyageDetails.dart';
+import 'package:lottie/lottie.dart';
 
 class AllVoyagesScreen extends StatefulWidget {
   const AllVoyagesScreen({
@@ -161,11 +163,17 @@ class _AllVoyagesScreenState extends State<AllVoyagesScreen> {
         decoration: BoxDecoration(
           color: const Color(0xFF1E2622),
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: const Color(0xFF29F58B).withValues(alpha: 0.35)),
+          border: Border.all(
+            color: const Color(0xFF29F58B).withValues(alpha: 0.35),
+          ),
         ),
         child: Row(
           children: [
-            const Icon(Icons.person_outline, color: Color(0xFF29F58B), size: 22),
+            const Icon(
+              Icons.person_outline,
+              color: Color(0xFF29F58B),
+              size: 22,
+            ),
             const SizedBox(width: 10),
             Expanded(
               child: Column(
@@ -462,36 +470,20 @@ class _AllVoyagesScreenState extends State<AllVoyagesScreen> {
             Center(
               child: Column(
                 children: [
-                  Container(
-                    width: 80,
-                    height: 80,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF00E676).withValues(alpha: 0.2),
-                      borderRadius: BorderRadius.circular(40),
-                    ),
-                    child: const Icon(
-                      Icons.directions_bus,
-                      color: Color(0xFF00E676),
-                      size: 40,
-                    ),
+                  Lottie.asset(
+                    'assets/svg/no_voyage.json',
+                    width: 200,
+                    height: 200,
+                    repeat: true,
                   ),
                   const SizedBox(height: 20),
                   Text(
-                    'Aucun voyage pour cette période',
-                    style: GoogleFonts.caveat(
-                      color: Colors.white,
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
+                    'Aucun voyage prévu pour cette ${_periode.label}. Cliquez sur "Cette sem." pour voir le programme de la semaine.',
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.poppins(
+                      color: Colors.white54,
+                      fontSize: 14,
                     ),
-                  ),
-                  const SizedBox(height: 16),
-                  ElevatedButton(
-                    onPressed: _refresh,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF00E676),
-                      foregroundColor: Colors.black,
-                    ),
-                    child: const Text('Réessayer'),
                   ),
                 ],
               ),
@@ -539,7 +531,9 @@ class _AllVoyagesScreenState extends State<AllVoyagesScreen> {
         color: isPassed ? const Color(0xFF1A1A1A) : const Color(0xFF222222),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
-          color: isPassed ? Colors.white10 : Colors.white.withValues(alpha: 0.1),
+          color: isPassed
+              ? Colors.white10
+              : Colors.white.withValues(alpha: 0.1),
         ),
       ),
       child: Material(
@@ -550,239 +544,244 @@ class _AllVoyagesScreenState extends State<AllVoyagesScreen> {
           child: Opacity(
             opacity: isPassed ? 0.55 : 1,
             child: Padding(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        voyage.villeDepart,
-                        style: const TextStyle(
-                          color: Color(0xFF00E676),
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                    const Icon(
-                      Icons.arrow_forward,
-                      color: Color(0xFF00E676),
-                      size: 20,
-                    ),
-                    Expanded(
-                      child: Text(
-                        voyage.villeArrivee,
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          color: Color(0xFF00E676),
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: Colors.white10,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: const Icon(
-                        Icons.access_time,
-                        color: Color(0xFF00E676),
-                        size: 16,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Départ',
-                          style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.54),
-                            fontSize: 12,
-                          ),
-                        ),
-                        Text(
-                          voyage.heure,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(width: 24),
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: Colors.white10,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: const Icon(
-                        Icons.calendar_today,
-                        color: Color(0xFF00E676),
-                        size: 16,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Date',
-                          style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.54),
-                            fontSize: 12,
-                          ),
-                        ),
-                        Text(
-                          voyage.dateDepart.length >= 10
-                              ? voyage.dateDepart.substring(0, 10)
-                              : voyage.dateDepart,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    const Icon(
-                      Icons.event_seat,
-                      color: Color(0xFF00E676),
-                      size: 16,
-                    ),
-                    const SizedBox(width: 10),
-                    Text(
-                      voyage.placesDisponiblesTotal > 0
-                          ? '${voyage.placesDisponiblesTotal} siège(s) dispo'
-                          : 'Complet',
-                      style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.55),
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                ),
-                if (voyage.tarifs.isNotEmpty) ...[
-                  const SizedBox(height: 14),
-                  Text(
-                    'Tarifs par classe',
-                    style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.54),
-                      fontSize: 12,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: voyage.tarifs
-                        .map(
-                          (t) => Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 6,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Colors.white10,
-                              borderRadius: BorderRadius.circular(10),
-                              border: Border.all(color: Colors.white12),
-                            ),
-                            child: Text(
-                              '${t.libelle}: ${t.prix.toStringAsFixed(0)} ${_suffixeDevisePrix(voyage)}',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 12,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ),
-                        )
-                        .toList(),
-                  ),
-                ] else ...[
-                  const SizedBox(height: 14),
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
                   Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 6,
+                      Expanded(
+                        child: TruncatedText(
+                          voyage.villeDepart,
+                          style: const TextStyle(
+                            color: Color(0xFF00E676),
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF00E676).withValues(alpha: 0.2),
-                          borderRadius: BorderRadius.circular(12),
+                      ),
+                      const Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 8),
+                        child: Icon(
+                          Icons.arrow_forward,
+                          color: Color(0xFF00E676),
+                          size: 20,
                         ),
-                        child: Text(
-                          _prixUnitaireReference(voyage) > 0
-                              ? '${_prixUnitaireReference(voyage).toStringAsFixed(0)} ${_suffixeDevisePrix(voyage)}'
-                              : 'Tarif sur demande',
-                          style: TextStyle(
-                            color: _prixUnitaireReference(voyage) > 0
-                                ? const Color(0xFF00E676)
-                                : Colors.white54,
-                            fontSize: 16,
+                      ),
+                      Expanded(
+                        child: TruncatedText(
+                          voyage.villeArrivee,
+                          textAlign: TextAlign.end,
+                          style: const TextStyle(
+                            color: Color(0xFF00E676),
+                            fontSize: 20,
                             fontWeight: FontWeight.bold,
                           ),
                         ),
                       ),
                     ],
                   ),
-                ],
-                const SizedBox(height: 12),
-                Wrap(
-                  spacing: 12,
-                  runSpacing: 8,
-                  children: [
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          Icons.directions_bus,
-                          color: Colors.white.withValues(alpha: 0.7),
-                          size: 14,
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Colors.white10,
+                          borderRadius: BorderRadius.circular(8),
                         ),
-                        const SizedBox(width: 4),
+                        child: const Icon(
+                          Icons.access_time,
+                          color: Color(0xFF00E676),
+                          size: 16,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Départ',
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.54),
+                              fontSize: 12,
+                            ),
+                          ),
+                          Text(
+                            voyage.heure,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(width: 24),
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Colors.white10,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Icon(
+                          Icons.calendar_today,
+                          color: Color(0xFF00E676),
+                          size: 16,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Date',
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.54),
+                              fontSize: 12,
+                            ),
+                          ),
+                          Text(
+                            voyage.dateDepart.length >= 10
+                                ? voyage.dateDepart.substring(0, 10)
+                                : voyage.dateDepart,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      const Icon(
+                        Icons.event_seat,
+                        color: Color(0xFF00E676),
+                        size: 16,
+                      ),
+                      const SizedBox(width: 10),
+                      Text(
+                        voyage.placesDisponiblesTotal > 0
+                            ? '${voyage.placesDisponiblesTotal} siège(s) dispo'
+                            : 'Complet',
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.55),
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (voyage.tarifs.isNotEmpty) ...[
+                    const SizedBox(height: 14),
+                    Text(
+                      'Tarifs par classe',
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.54),
+                        fontSize: 12,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: voyage.tarifs
+                          .map(
+                            (t) => Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 6,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.white10,
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(color: Colors.white12),
+                              ),
+                              child: Text(
+                                '${t.libelle}: ${t.prix.toStringAsFixed(0)} ${_suffixeDevisePrix(voyage)}',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ),
+                          )
+                          .toList(),
+                    ),
+                  ] else ...[
+                    const SizedBox(height: 14),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(
+                              0xFF00E676,
+                            ).withValues(alpha: 0.2),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            _prixUnitaireReference(voyage) > 0
+                                ? '${_prixUnitaireReference(voyage).toStringAsFixed(0)} ${_suffixeDevisePrix(voyage)}'
+                                : 'Tarif sur demande',
+                            style: TextStyle(
+                              color: _prixUnitaireReference(voyage) > 0
+                                  ? const Color(0xFF00E676)
+                                  : Colors.white54,
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 12,
+                    runSpacing: 8,
+                    children: [
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.directions_bus,
+                            color: Colors.white.withValues(alpha: 0.7),
+                            size: 14,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            'Bus ${voyage.numeroBus}',
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.7),
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (voyage.nomSociete != null &&
+                          voyage.nomSociete!.isNotEmpty)
                         Text(
-                          'Bus ${voyage.numeroBus}',
+                          voyage.nomSociete!,
+                          overflow: TextOverflow.ellipsis,
                           style: TextStyle(
                             color: Colors.white.withValues(alpha: 0.7),
                             fontSize: 12,
                           ),
                         ),
-                      ],
-                    ),
-                    if (voyage.nomSociete != null &&
-                        voyage.nomSociete!.isNotEmpty)
-                      Text(
-                        voyage.nomSociete!,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.7),
-                          fontSize: 12,
-                        ),
-                      ),
-                  ],
-                ),
-              ],
-            ),
+                    ],
+                  ),
+                ],
+              ),
             ),
           ),
         ),

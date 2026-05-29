@@ -1,12 +1,14 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:lottie/lottie.dart';
 import 'package:rusa/screens/ProfileImageViewScreen.dart';
 import 'package:rusa/screens/client/AllVoyagesScreen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:rusa/screens/client/voyageDetails.dart';
 import 'package:rusa/widgets/ProfileImageWidget.dart';
 import 'package:rusa/widgets/voyage_periode_selector.dart';
+import 'package:rusa/widgets/truncated_text.dart';
 import 'package:rusa/services/api_service.dart';
 import 'package:rusa/services/cache_service.dart';
 import 'package:rusa/models/voyage_model.dart';
@@ -348,17 +350,27 @@ class _SearchTripScreenState extends State<SearchTripScreen> {
                                   SizedBox(
                                     height:
                                         MediaQuery.of(context).size.height *
-                                        0.25,
+                                        0.12,
                                   ),
+                                  Center(
+                                    child: Lottie.asset(
+                                      'assets/svg/no_voyage.json',
+                                      width: 200,
+                                      height: 200,
+                                      repeat: true,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 12),
                                   Center(
                                     child: Text(
                                       _searchQuery.trim().isEmpty
-                                          ? 'Aucun voyage pour cette période'
+                                          ? 'Oups ! Aucun  voyage prévu pour ${_periode.label}. Cliquez sur "Cette sem." pour voir le programme de la semaine.'
                                           : 'Aucun résultat pour cette recherche',
                                       style: const TextStyle(
                                         color: Colors.white54,
                                         fontSize: 16,
                                       ),
+                                      textAlign: TextAlign.center,
                                     ),
                                   ),
                                 ],
@@ -413,7 +425,7 @@ class _SearchTripScreenState extends State<SearchTripScreen> {
                 Row(
                   children: [
                     Expanded(
-                      child: Text(
+                      child: TruncatedText(
                         voyage.villeDepart,
                         style: const TextStyle(
                           color: Color(0xFF00E676),
@@ -423,16 +435,19 @@ class _SearchTripScreenState extends State<SearchTripScreen> {
                       ),
                     ),
 
-                    const Icon(
-                      Icons.arrow_forward,
-                      color: Color(0xFF00E676),
-                      size: 20,
+                    const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 8),
+                      child: Icon(
+                        Icons.arrow_forward,
+                        color: Color(0xFF00E676),
+                        size: 20,
+                      ),
                     ),
 
                     Expanded(
-                      child: Text(
+                      child: TruncatedText(
                         voyage.villeArrivee,
-                        textAlign: TextAlign.right,
+                        textAlign: TextAlign.end,
                         style: const TextStyle(
                           color: Color(0xFF00E676),
                           fontSize: 20,
