@@ -4,18 +4,24 @@ import 'package:flutter/material.dart';
 import 'package:flutter_contacts/flutter_contacts.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../models/auth_models.dart';
 import '../../models/categorie_siege_model.dart';
+import '../../widgets/caissier_client_picker_sheet.dart';
 import '../../models/reservation_with_passengers_request.dart';
 import '../../models/voyage_model.dart';
 import '../../services/api_service.dart';
 import '../../services/cache_service.dart';
 import '../../services/session_service.dart';
+import 'MobileMoneyPendingScreen.dart';
 import 'TicketReceiptScreen.dart';
 
 class ReservationFormScreen extends StatefulWidget {
   final Voyage voyage;
 
-  const ReservationFormScreen({super.key, required this.voyage});
+  /// Client bénéficiaire (flux caissier).
+  final Client? client;
+
+  const ReservationFormScreen({super.key, required this.voyage, this.client});
 
   @override
   State<ReservationFormScreen> createState() => _ReservationFormScreenState();
@@ -27,12 +33,23 @@ class _ReservationFormScreenState extends State<ReservationFormScreen> {
   final _formKey = GlobalKey<FormState>();
   final _placesController = TextEditingController(text: '1');
   final _montantPayeController = TextEditingController();
-  final _referenceController = TextEditingController();
 
   bool _isLoading = false;
   bool _isCaissier = false;
+  bool _passagersAdditionnelsActifs = false;
+  Client? _selectedClient;
+
+  /// Vente en caisse : seul le client choisi compte comme passager, pas le caissier.
+  bool get _isVenteCaissier => _isCaissier || widget.client != null;
+  List<Client> _clientsForPicker = [];
+  String? _clientsLoadError;
+  int? _clientPassagerCategorieSiegeId;
   _ReservationMode _reservationMode = _ReservationMode.selfOnly;
-  String _methodePaiement = 'Mobile Money';
+
+  /// Valeurs attendues par l'API: `MOBILE_MONEY`, `CARTE_BANCAIRE`, et (caissier seulement) `CASH`.
+  String _methodePaiement = 'MOBILE_MONEY';
+  String? _mobileMoneyPhoneToSend;
+  bool _isMobileMoneyPhoneConfirmed = false;
 
   /// Passagers additionnels (formulaire unique → liste).
   final List<_PassagerSaisi> _passagersAjoutes = [];
@@ -50,10 +67,17 @@ class _ReservationFormScreenState extends State<ReservationFormScreen> {
   @override
   void initState() {
     super.initState();
+    _selectedClient = widget.client;
+    if (widget.client != null) {
+      _isCaissier = true;
+    }
     _syncPlacesAndMontant();
     _loadRoleContext();
     _loadCategorieSieges();
   }
+
+  bool get _countsSelectedClientAsPassenger =>
+      _isVenteCaissier && _selectedClient != null;
 
   /// Si l’API refuse le rôle (403), on peut quand même proposer les catégories
   /// présentes sur le voyage (`tarifs`), avec les bons `idCategorieSiege`.
@@ -83,32 +107,90 @@ class _ReservationFormScreenState extends State<ReservationFormScreen> {
     return out;
   }
 
+  bool _isVoyageDepartPasse(Voyage v) {
+    final raw = v.dateDepart.trim();
+    if (raw.isEmpty) return false;
+    final parsed = DateTime.tryParse(raw);
+    if (parsed == null) return false;
+
+    final local = parsed.isUtc ? parsed.toLocal() : parsed;
+    final depDay = DateTime(local.year, local.month, local.day);
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    return depDay.isBefore(today);
+  }
+
+  /// Catégories proposées = tarifs du voyage (évite VP hors voyage, etc.).
+  List<CategorieSiege> _categoriesPourCeVoyage(List<CategorieSiege> fromApi) {
+    final tarifIds = widget.voyage.tarifs
+        .where((t) => t.idCategorieSiege > 0)
+        .map((t) => t.idCategorieSiege)
+        .toSet();
+    if (tarifIds.isEmpty) return fromApi;
+
+    final filtered = fromApi
+        .where((c) => tarifIds.contains(c.idCategorieSiege))
+        .toList();
+    if (filtered.isNotEmpty) return filtered;
+
+    return _categoriesFromVoyageTarifs();
+  }
+
+  int? _defaultCategorieSiegeId(List<CategorieSiege> categories) {
+    for (final t in widget.voyage.tarifs) {
+      if (t.idCategorieSiege > 0) return t.idCategorieSiege;
+    }
+    if (categories.isNotEmpty) return categories.first.idCategorieSiege;
+    return null;
+  }
+
   Future<void> _loadCategorieSieges() async {
     var categories = await ApiService.getCategorieSiegesBySociete(
       idSociete: widget.voyage.idSociete,
       actifsSeulement: true,
     );
-    if (categories.isEmpty && widget.voyage.tarifs.isNotEmpty) {
+    if (widget.voyage.tarifs.isNotEmpty) {
+      categories = _categoriesPourCeVoyage(categories);
+      debugPrint(
+        'Catégories siège pour voyage ${widget.voyage.id}: '
+        '${categories.length} (filtrées sur tarifs).',
+      );
+    } else if (categories.isEmpty) {
       categories = _categoriesFromVoyageTarifs();
       debugPrint(
-        'Catégories siège: liste vide depuis l’API — '
-        'repli sur voyage.tarifs (${categories.length} catégorie(s)).',
+        'Catégories siège: repli sur voyage.tarifs (${categories.length}).',
       );
     }
     if (!mounted) return;
+    final defaultId = _defaultCategorieSiegeId(categories);
     setState(() {
       _categoriesSiege = categories;
-      if (_selfCategorieSiegeId == null && categories.isNotEmpty) {
-        _selfCategorieSiegeId = categories.first.idCategorieSiege;
+      if (defaultId != null) {
+        _selfCategorieSiegeId ??= defaultId;
+        _clientPassagerCategorieSiegeId ??= defaultId;
+        _draftCategorieSiegeId ??= defaultId;
+        if (_clientPassagerCategorieSiegeId != null &&
+            !categories.any(
+              (c) => c.idCategorieSiege == _clientPassagerCategorieSiegeId,
+            )) {
+          _clientPassagerCategorieSiegeId = defaultId;
+        }
       }
-      _draftCategorieSiegeId ??= categories.isNotEmpty
-          ? categories.first.idCategorieSiege
-          : null;
       _syncPlacesAndMontant();
     });
   }
 
   Future<void> _loadRoleContext() async {
+    if (widget.client != null) {
+      if (!mounted) return;
+      setState(() {
+        _isCaissier = true;
+        _selectedClient = widget.client;
+        _syncPlacesAndMontant();
+      });
+      _ensureClientsLoaded();
+      return;
+    }
     final auth = await CacheService.getAuthResponse();
     if (!mounted || auth == null) return;
     final primaryRoleName = auth.primaryRole.nom.toLowerCase().trim();
@@ -119,22 +201,286 @@ class _ReservationFormScreenState extends State<ReservationFormScreen> {
     if (!mounted) return;
     setState(() {
       _isCaissier = isCaissier;
-      if (_isCaissier && _reservationMode == _ReservationMode.selfOnly) {
-        _reservationMode = _ReservationMode.selfAndOthers;
-      }
       _syncPlacesAndMontant();
+    });
+    if (isCaissier) {
+      _ensureClientsLoaded();
+    }
+  }
+
+  Future<void> _ensureClientsLoaded({bool force = false}) async {
+    if (!force && _clientsForPicker.isNotEmpty) return;
+    final list = await ApiService.getAllClients();
+    if (!mounted) return;
+    setState(() {
+      if (list == null) {
+        _clientsLoadError =
+            'Impossible de charger les clients. Vérifiez vos droits.';
+        _clientsForPicker = [];
+      } else {
+        _clientsForPicker = list;
+        _clientsLoadError = null;
+      }
     });
   }
 
+  Future<void> _openClientPicker() async {
+    if (_clientsForPicker.isEmpty) {
+      await _ensureClientsLoaded(force: true);
+    }
+    if (!mounted) return;
+    final picked = await showModalBottomSheet<Client>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => CaissierClientPickerSheet(
+        clients: _clientsForPicker,
+        loadError: _clientsLoadError,
+        onRetry: () async {
+          Navigator.pop(ctx);
+          await _ensureClientsLoaded(force: true);
+          if (mounted) await _openClientPicker();
+        },
+      ),
+    );
+    if (picked != null && mounted) {
+      setState(() {
+        _selectedClient = picked;
+        _passagersAdditionnelsActifs = false;
+        _passagersAjoutes.clear();
+        _clearDraft();
+        _mobileMoneyPhoneToSend = null;
+        _isMobileMoneyPhoneConfirmed = false;
+        _syncPlacesAndMontant();
+      });
+    }
+  }
+
+  Future<String?> _getMobileMoneyPhone() async {
+    if (_isVenteCaissier) {
+      return _normalizeMobileMoneyPhone(_selectedClient?.telephone);
+    }
+    final session = SessionService();
+    final userData = await session.getUserInfo();
+    final phone = (userData?['phone'] ?? userData?['telephone'] ?? '')
+        .toString()
+        .trim();
+    return _normalizeMobileMoneyPhone(phone);
+  }
+
+  /// Format Mobile Money: indicatif obligatoire, sans '+'.
+  /// Exemples:
+  /// - +243812345678 -> 243812345678
+  /// - 0812345678    -> 243812345678
+  /// - 812345678     -> 243812345678
+  String? _normalizeMobileMoneyPhone(String? raw) {
+    final input = (raw ?? '').trim();
+    if (input.isEmpty) return null;
+
+    var digits = input.replaceAll(RegExp(r'[^0-9]'), '');
+    if (digits.isEmpty) return null;
+
+    // Préfixe international saisi en "00"
+    if (digits.startsWith('00')) {
+      digits = digits.substring(2);
+    }
+
+    // DRC par défaut: 243
+    if (digits.startsWith('243')) return digits;
+    if (digits.length == 10 && digits.startsWith('0')) {
+      return '243${digits.substring(1)}';
+    }
+    if (digits.length == 9) {
+      return '243$digits';
+    }
+    return digits;
+  }
+
+  Future<String?> _confirmMobileMoneyPhone(String initialPhone) async {
+    String mobilePhone = _normalizeMobileMoneyPhone(initialPhone) ?? '';
+
+    return showModalBottomSheet<String?>(
+      context: context,
+      backgroundColor: const Color(0xFF2A2A2A),
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        final bottomInset = MediaQuery.viewInsetsOf(ctx).bottom;
+        return Padding(
+          padding: EdgeInsets.fromLTRB(24, 20, 24, 28 + bottomInset),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.white24,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 18),
+                Text(
+                  'Confirmer votre numéro ',
+                  style: GoogleFonts.poppins(
+                    color: Colors.white,
+                    fontSize: 24,
+                    fontWeight: FontWeight.w700,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  'Ce numéro sera utilisé pour le paiement/réservation de votre billet. Rassurez-vous d\'avoir saisi le bon numéro. un pourcentage de 2.5% sera appliqué.',
+                  style: TextStyle(fontSize: 12),
+                ),
+                const SizedBox(height: 10),
+                TextFormField(
+                  initialValue: _normalizeMobileMoneyPhone(initialPhone) ?? initialPhone,
+                  keyboardType: TextInputType.phone,
+                  style: GoogleFonts.poppins(color: Colors.white),
+                  decoration: InputDecoration(
+                    hintText: 'Ex: 0971234567',
+                    hintStyle: GoogleFonts.poppins(color: Colors.white38),
+                    filled: true,
+                    fillColor: const Color(0xFF1E1E1E),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: Colors.white10),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: Colors.white10),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: Color(0xFF00E676)),
+                    ),
+                  ),
+                  onChanged: (v) => mobilePhone = v.trim(),
+                ),
+                const SizedBox(height: 18),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => Navigator.pop(ctx, null),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.white70,
+                          side: const BorderSide(color: Colors.white24),
+                        ),
+                        child: const Text('Annuler'),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: FilledButton(
+                        onPressed: () {
+                          final trimmed = _normalizeMobileMoneyPhone(mobilePhone);
+                          if (trimmed == null || trimmed.isEmpty) {
+                            ScaffoldMessenger.of(ctx).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                  'Le numéro ne peut pas être vide.',
+                                ),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
+                            return;
+                          }
+                          Navigator.pop(ctx, trimmed);
+                        },
+                        style: FilledButton.styleFrom(
+                          backgroundColor: const Color(0xFF00E676),
+                          foregroundColor: Colors.black,
+                        ),
+                        child: const Text('Confirmer'),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void _handlePaymentMethodChanged(String? value) {
+    final newMethod = value ?? 'MOBILE_MONEY';
+    final previousMethod = _methodePaiement;
+
+    if (newMethod != 'MOBILE_MONEY') {
+      setState(() {
+        _methodePaiement = newMethod;
+        _mobileMoneyPhoneToSend = null;
+        _isMobileMoneyPhoneConfirmed = false;
+      });
+      return;
+    }
+
+    // Traiter Mobile Money en async (confirmation du numéro).
+    _handleMobileMoneySelection(previousMethod);
+  }
+
+  /// Ouvre le bottom sheet de confirmation (numéro modifiable).
+  Future<String?> _promptAndConfirmMobileMoneyPhone() async {
+    var initial = _mobileMoneyPhoneToSend?.trim() ?? '';
+    if (initial.isEmpty) {
+      initial = (await _getMobileMoneyPhone())?.trim() ?? '';
+    }
+    return _confirmMobileMoneyPhone(initial);
+  }
+
+  void _handleMobileMoneySelection(String previousMethod) async {
+    setState(() => _methodePaiement = 'MOBILE_MONEY');
+
+    final confirmedPhone = await _promptAndConfirmMobileMoneyPhone();
+    if (!mounted) return;
+
+    if (confirmedPhone != null && confirmedPhone.trim().isNotEmpty) {
+      setState(() {
+        _mobileMoneyPhoneToSend = confirmedPhone.trim();
+        _isMobileMoneyPhoneConfirmed = true;
+      });
+    } else {
+      setState(() {
+        _methodePaiement = previousMethod;
+        _mobileMoneyPhoneToSend = null;
+        _isMobileMoneyPhoneConfirmed = false;
+      });
+    }
+  }
+
   bool get _showPassengersSection {
-    return _isCaissier || _reservationMode != _ReservationMode.selfOnly;
+    if (_isVenteCaissier) {
+      return _selectedClient != null && _passagersAdditionnelsActifs;
+    }
+    return _reservationMode != _ReservationMode.selfOnly;
+  }
+
+  void _setPassagersAdditionnelsActifs(bool value) {
+    setState(() {
+      _passagersAdditionnelsActifs = value;
+      if (!value) {
+        _passagersAjoutes.clear();
+        _clearDraft();
+      }
+      _syncPlacesAndMontant();
+    });
   }
 
   @override
   void dispose() {
     _placesController.dispose();
     _montantPayeController.dispose();
-    _referenceController.dispose();
     _draftNom.dispose();
     _draftPhone.dispose();
     _draftEmail.dispose();
@@ -169,6 +515,16 @@ class _ReservationFormScreenState extends State<ReservationFormScreen> {
 
   /// Somme des tarifs : vous + chaque passager ajouté (chaque catégorie peut différer).
   double get _montantTotal {
+    if (_isVenteCaissier && _selectedClient != null) {
+      final catId = _clientPassagerCategorieSiegeId;
+      if (catId == null) return 0;
+      var sum = _prixPourCategorieSiege(catId);
+      for (final p in _passagersAjoutes) {
+        sum += _prixPourCategorieSiege(p.idCategorieSiege);
+      }
+      return sum;
+    }
+
     final idTit = _selfCategorieSiegeId;
     if (idTit == null) {
       if (widget.voyage.prix > 0) {
@@ -177,7 +533,7 @@ class _ReservationFormScreenState extends State<ReservationFormScreen> {
       return 0;
     }
     var sum = _prixPourCategorieSiege(idTit);
-    if (_showPassengersSection) {
+    if (_showPassengersSection && !_isVenteCaissier) {
       for (final p in _passagersAjoutes) {
         sum += _prixPourCategorieSiege(p.idCategorieSiege);
       }
@@ -186,6 +542,13 @@ class _ReservationFormScreenState extends State<ReservationFormScreen> {
   }
 
   int get _requiredPlaces {
+    if (_isVenteCaissier) {
+      if (_selectedClient == null) return 0;
+      return 1 + _passagersAjoutes.length;
+    }
+    if (_countsSelectedClientAsPassenger) {
+      return 1 + _passagersAjoutes.length;
+    }
     final extra = _showPassengersSection ? _passagersAjoutes.length : 0;
     return 1 + extra;
   }
@@ -267,12 +630,24 @@ class _ReservationFormScreenState extends State<ReservationFormScreen> {
   }
 
   String _libelleCategorie(int id) {
+    for (final t in widget.voyage.tarifs) {
+      if (t.idCategorieSiege == id && t.libelle.trim().isNotEmpty) {
+        return t.libelle.trim();
+      }
+    }
     for (final c in _categoriesSiege) {
       if (c.idCategorieSiege == id) {
         return '${c.codeCategorieSiege} — ${c.libelle}';
       }
     }
     return 'Cat. $id';
+  }
+
+  DropdownMenuItem<int> _categorieDropdownItem(int id) {
+    return DropdownMenuItem<int>(
+      value: id,
+      child: Text(_libelleCategorie(id), overflow: TextOverflow.ellipsis),
+    );
   }
 
   /// Contrat API : `email` absent ou vide → `null` dans le JSON.
@@ -395,6 +770,16 @@ class _ReservationFormScreenState extends State<ReservationFormScreen> {
   }
 
   Future<void> _submit() async {
+    if (_isVoyageDepartPasse(widget.voyage)) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Ce voyage est déjà passé. Réservation impossible.'),
+          backgroundColor: Color(0xFFE53935),
+        ),
+      );
+      return;
+    }
     if (!_formKey.currentState!.validate()) return;
     final session = SessionService();
     final userData = await session.getUserInfo();
@@ -410,8 +795,21 @@ class _ReservationFormScreenState extends State<ReservationFormScreen> {
     }
 
     final idUtilisateur = int.tryParse(userData['id'] ?? '0') ?? 0;
-    final idClient = int.tryParse(userData['client_id'] ?? '0') ?? 0;
+    final idClient = _isVenteCaissier
+        ? (_selectedClient?.idClient ?? 0)
+        : (int.tryParse(userData['client_id'] ?? '0') ?? 0);
     final idSite = await _resolveIdSite(userData);
+
+    if (_isVenteCaissier && idClient <= 0) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Sélectionnez ou créez un client avant de valider.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
     final totalDu = _montantTotal;
     if (totalDu <= 0) {
       if (!mounted) return;
@@ -442,49 +840,64 @@ class _ReservationFormScreenState extends State<ReservationFormScreen> {
       return;
     }
 
-    final passagers = <ReservationPassengerData>[];
-    if (_selfCategorieSiegeId == null) {
+    if (_methodePaiement == 'MOBILE_MONEY' && !_isMobileMoneyPhoneConfirmed) {
+      final confirmedPhone = await _promptAndConfirmMobileMoneyPhone();
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Sélectionne une catégorie de siège pour le client connecté.',
-          ),
-          backgroundColor: Colors.red,
-        ),
-      );
-      return;
+      if (confirmedPhone == null || confirmedPhone.trim().isEmpty) {
+        return;
+      }
+      setState(() {
+        _mobileMoneyPhoneToSend = confirmedPhone.trim();
+        _isMobileMoneyPhoneConfirmed = true;
+      });
     }
-    final idCatTitulaire = _selfCategorieSiegeId!;
-    final emailTitulaireBrut =
-        (userData['email'] ?? userData['user_email'])?.toString();
-    final currentUserPassenger = ReservationPassengerData(
-      idClient: idClient,
-      idCategorieSiege: idCatTitulaire,
-      nomComplet: (userData['name'] ?? userData['user_name'] ?? '')
-          .toString()
-          .trim(),
-      telephone: (userData['phone'] ?? userData['telephone'] ?? '')
-          .toString()
-          .trim(),
-      email: _emailPourApi(emailTitulaireBrut),
-      documentType: '',
-      documentNumero: '',
-      genre: '',
-    );
-    passagers.add(currentUserPassenger);
 
-    if (_showPassengersSection) {
-      if (_passagersAjoutes.isEmpty) {
+    // Champs additionnels requis par certains endpoints de paiement électronique.
+    final String? phoneForPayment = _isVenteCaissier
+        ? _selectedClient?.telephone.trim()
+        : (userData['phone'] ?? userData['telephone'] ?? '').toString().trim();
+
+    final String? codeDevisePrix = widget.voyage.codeDevisePrix?.trim();
+    final String? codeDevisePaiement =
+        (codeDevisePrix != null && codeDevisePrix.isNotEmpty)
+        ? codeDevisePrix
+        : (widget.voyage.codeDevisePrincipale?.trim().isNotEmpty == true
+              ? widget.voyage.codeDevisePrincipale?.trim()
+              : null);
+
+    final String? phoneForElectronic = _methodePaiement == 'MOBILE_MONEY'
+        ? _mobileMoneyPhoneToSend
+        : _methodePaiement == 'CARTE_BANCAIRE'
+        ? phoneForPayment
+        : null;
+
+    final passagers = <ReservationPassengerData>[];
+
+    if (_isVenteCaissier && _selectedClient != null) {
+      final catClient = _clientPassagerCategorieSiegeId;
+      if (catClient == null) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Ajoute au moins un passager à la liste.'),
+            content: Text('Choisissez une catégorie de siège pour le client.'),
             backgroundColor: Colors.red,
           ),
         );
         return;
       }
+      final c = _selectedClient!;
+      passagers.add(
+        ReservationPassengerData(
+          idClient: c.idClient,
+          idCategorieSiege: catClient,
+          nomComplet: c.nomClient,
+          telephone: c.telephone,
+          email: _emailPourApi(c.emailClient),
+          documentType: '',
+          documentNumero: '',
+          genre: c.genreClient,
+        ),
+      );
       for (final p in _passagersAjoutes) {
         passagers.add(
           ReservationPassengerData(
@@ -497,6 +910,64 @@ class _ReservationFormScreenState extends State<ReservationFormScreen> {
             genre: p.genre,
           ),
         );
+      }
+    } else {
+      if (_selfCategorieSiegeId == null) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Sélectionne une catégorie de siège pour le client connecté.',
+            ),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+      final idCatTitulaire = _selfCategorieSiegeId!;
+      final emailTitulaireBrut = (userData['email'] ?? userData['user_email'])
+          ?.toString();
+      passagers.add(
+        ReservationPassengerData(
+          idClient: idClient,
+          idCategorieSiege: idCatTitulaire,
+          nomComplet: (userData['name'] ?? userData['user_name'] ?? '')
+              .toString()
+              .trim(),
+          telephone: (userData['phone'] ?? userData['telephone'] ?? '')
+              .toString()
+              .trim(),
+          email: _emailPourApi(emailTitulaireBrut),
+          documentType: '',
+          documentNumero: '',
+          genre: '',
+        ),
+      );
+
+      if (_showPassengersSection) {
+        if (_passagersAjoutes.isEmpty) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Ajoute au moins un passager à la liste.'),
+              backgroundColor: Colors.red,
+            ),
+          );
+          return;
+        }
+        for (final p in _passagersAjoutes) {
+          passagers.add(
+            ReservationPassengerData(
+              idCategorieSiege: p.idCategorieSiege,
+              nomComplet: p.nomComplet,
+              telephone: p.telephone,
+              email: _emailPourApi(p.email),
+              documentType: p.documentType,
+              documentNumero: p.documentNumero,
+              genre: p.genre,
+            ),
+          );
+        }
       }
     }
 
@@ -529,34 +1000,58 @@ class _ReservationFormScreenState extends State<ReservationFormScreen> {
           montantAPaye: totalDu,
           montantPaye: montantPaye,
           methodePaiement: _methodePaiement,
-          referenceTransaction: _referenceController.text.trim().isEmpty
-              ? 'TXN-${DateTime.now().millisecondsSinceEpoch}'
-              : _referenceController.text.trim(),
+          phone: phoneForElectronic,
+          codeDevisePaiement: codeDevisePaiement,
           idUtilisateur: idUtilisateur,
           idSociete: widget.voyage.idSociete,
           idSite: idSite,
         ),
       );
 
-      final response = await ApiService.reservationWithPassengersAndPaiement(
-        request,
-      );
-      if (!mounted) return;
-
-      if (response == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Echec de la reservation.'),
-            backgroundColor: Colors.red,
+      if (_methodePaiement == 'MOBILE_MONEY' ||
+          _methodePaiement == 'CARTE_BANCAIRE') {
+        if (!mounted) return;
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (context) => MobileMoneyPendingScreen(
+              request: request,
+              isVenteCaissier: _isVenteCaissier,
+            ),
           ),
         );
         return;
       }
 
+      final result = await ApiService.reservationWithPassengersAndPaiement(
+        request,
+      );
+      if (!mounted) return;
+
+      if (!result.isSuccess || result.response == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              result.errorMessage ??
+                  'Échec de la réservation. Essayez une autre catégorie de siège.',
+            ),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 6),
+          ),
+        );
+        return;
+      }
+
+      final response = result.response!;
+
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Reservation creee avec succes.'),
-          backgroundColor: Color(0xFF00E676),
+        SnackBar(
+          content: Text(
+            _isVenteCaissier
+                ? 'Vente enregistrée avec succès.'
+                : 'Réservation créée avec succès.',
+          ),
+          backgroundColor: const Color(0xFF00E676),
         ),
       );
 
@@ -590,9 +1085,9 @@ class _ReservationFormScreenState extends State<ReservationFormScreen> {
           ),
         ),
         backgroundColor: const Color(0xFF121212),
-        title: const Text(
-          'Nouvelle reservation',
-          style: TextStyle(color: Colors.white, fontSize: 20),
+        title: Text(
+          _isVenteCaissier ? 'Vente de billet' : 'Nouvelle reservation',
+          style: const TextStyle(color: Colors.white, fontSize: 20),
         ),
       ),
       body: Form(
@@ -615,156 +1110,240 @@ class _ReservationFormScreenState extends State<ReservationFormScreen> {
                   : 'Tarifs : renseigne ta catégorie de siège pour afficher le total.',
               style: const TextStyle(color: Colors.white70),
             ),
-            const SizedBox(height: 16),
-            _buildField(
-              controller: _placesController,
-              label: 'Nombre de places',
-              keyboardType: TextInputType.number,
-              enabled: false,
-            ),
-            const SizedBox(height: 6),
-            Text(
-              'Mis à jour automatiquement (toi + passagers ajoutés).',
-              style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.45),
-                fontSize: 12,
-              ),
-            ),
-            const SizedBox(height: 18),
-            if (!_isCaissier) ...[
-              const Text(
-                'Type de billet',
-                style: TextStyle(
-                  color: Colors.white70,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 8),
-              SegmentedButton<_ReservationMode>(
-                selected: {_reservationMode},
-                onSelectionChanged: (selection) {
-                  if (selection.isNotEmpty) {
-                    _setReservationMode(selection.first);
-                  }
-                },
-                style: ButtonStyle(
-                  foregroundColor: WidgetStateProperty.resolveWith((states) {
-                    return states.contains(WidgetState.selected)
-                        ? Colors.black
-                        : Colors.white;
-                  }),
-                  backgroundColor: WidgetStateProperty.resolveWith((states) {
-                    return states.contains(WidgetState.selected)
-                        ? const Color(0xFF00E676)
-                        : const Color(0xFF2A2A2A);
-                  }),
-                ),
-                segments: const [
-                  ButtonSegment(
-                    value: _ReservationMode.selfOnly,
-                    label: Text('Moi'),
-                  ),
-                  ButtonSegment(
-                    value: _ReservationMode.othersOnly,
-                    label: Text('Autre(s)'),
-                  ),
-                  ButtonSegment(
-                    value: _ReservationMode.selfAndOthers,
-                    label: Text('Moi et autre(s)'),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                'Même pour une réservation pour autre(s), tes informations '
-                'restent incluses comme titulaire.',
-                textAlign: TextAlign.center,
-                style: TextStyle(color: Colors.white54, fontSize: 12),
-              ),
+            if (_isVenteCaissier) ...[
+              _buildCaissierClientSection(),
+              const SizedBox(height: 16),
             ],
-            if (_showPassengersSection) ...[
-              const SizedBox(height: 20),
-              _buildDraftPassengersBlock(),
-            ],
-            const SizedBox(height: 16),
-            DropdownButtonFormField<int>(
-              initialValue: _selfCategorieSiegeId,
-              items: _categoriesSiege
-                  .map(
-                    (c) => DropdownMenuItem<int>(
-                      value: c.idCategorieSiege,
-                      child: Text('${c.codeCategorieSiege} - ${c.libelle}'),
-                    ),
-                  )
-                  .toList(),
-              onChanged: _categoriesSiege.isEmpty
-                  ? null
-                  : (value) {
-                      setState(() {
-                        _selfCategorieSiegeId = value;
-                        _syncPlacesAndMontant();
-                      });
-                    },
-              decoration: _inputDecoration('Catégorie de siège (Vous)'),
-            ),
-            Padding(
-              padding: const EdgeInsets.only(top: 6, left: 4, right: 4),
-              child: Text(
-                'Indépendante des catégories choisies pour les autres passagers.',
+            if (!_isVenteCaissier || _selectedClient != null) ...[
+              const SizedBox(height: 16),
+              _buildField(
+                controller: _placesController,
+                label: 'Nombre de places',
+                keyboardType: TextInputType.number,
+                enabled: false,
+              ),
+              const SizedBox(height: 6),
+              Text(
+                _isVenteCaissier
+                    ? (_passagersAdditionnelsActifs
+                          ? 'Client bénéficiaire + passagers additionnels.'
+                          : 'Une place pour le client bénéficiaire.')
+                    : 'Mis à jour automatiquement (toi + passagers ajoutés).',
                 style: TextStyle(
                   color: Colors.white.withValues(alpha: 0.45),
-                  fontSize: 11,
+                  fontSize: 12,
                 ),
               ),
-            ),
-            const SizedBox(height: 12),
-            _buildField(
-              controller: _montantPayeController,
-              label: 'Montant payé',
-              keyboardType: TextInputType.number,
-              validator: (v) {
-                final value = double.tryParse((v ?? '').trim()) ?? 0;
-                final total = _montantTotal;
-                if (total <= 0) {
-                  return 'Total indisponible';
-                }
-                if (value <= 0 || value > total) {
-                  return '> 0 et ≤ ${total.toStringAsFixed(0)}';
-                }
-                return null;
-              },
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Rappel total: ${_montantTotal.toStringAsFixed(0)} $_suffixeDevise',
-              style: const TextStyle(color: Color(0xFF00E676)),
-            ),
-            const SizedBox(height: 12),
-            DropdownButtonFormField<String>(
-              key: ValueKey<String>('methode_$_methodePaiement'),
-              initialValue: _methodePaiement,
-              items: const [
-                DropdownMenuItem(
-                  value: 'Mobile Money',
-                  child: Text('Mobile Money'),
+              const SizedBox(height: 18),
+              if (!_isVenteCaissier) ...[
+                const Text(
+                  'Type de billet',
+                  style: TextStyle(
+                    color: Colors.white70,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
-                DropdownMenuItem(value: 'Especes', child: Text('Espèces')),
-                DropdownMenuItem(value: 'Carte', child: Text('Carte')),
+                const SizedBox(height: 8),
+                SegmentedButton<_ReservationMode>(
+                  selected: {_reservationMode},
+                  onSelectionChanged: (selection) {
+                    if (selection.isNotEmpty) {
+                      _setReservationMode(selection.first);
+                    }
+                  },
+                  style: ButtonStyle(
+                    foregroundColor: WidgetStateProperty.resolveWith((states) {
+                      return states.contains(WidgetState.selected)
+                          ? Colors.black
+                          : Colors.white;
+                    }),
+                    backgroundColor: WidgetStateProperty.resolveWith((states) {
+                      return states.contains(WidgetState.selected)
+                          ? const Color(0xFF00E676)
+                          : const Color(0xFF2A2A2A);
+                    }),
+                  ),
+                  segments: const [
+                    ButtonSegment(
+                      value: _ReservationMode.selfOnly,
+                      label: Text('Moi'),
+                    ),
+                    ButtonSegment(
+                      value: _ReservationMode.othersOnly,
+                      label: Text('Autre(s)'),
+                    ),
+                    ButtonSegment(
+                      value: _ReservationMode.selfAndOthers,
+                      label: Text('Moi et autre(s)'),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Même pour une réservation pour autre(s), tes informations '
+                  'restent incluses comme titulaire.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.white54, fontSize: 12),
+                ),
               ],
-              onChanged: (value) =>
-                  setState(() => _methodePaiement = value ?? 'Mobile Money'),
-              decoration: _inputDecoration('Méthode de paiement'),
-            ),
-            const SizedBox(height: 12),
-            _buildField(
-              controller: _referenceController,
-              label: 'Référence transaction (optionnel)',
-            ),
-            const SizedBox(height: 20),
+              if (_isVenteCaissier && _selectedClient != null) ...[
+                const SizedBox(height: 12),
+                Container(
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1A1A1A),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: Colors.white12),
+                  ),
+                  child: SwitchListTile(
+                    value: _passagersAdditionnelsActifs,
+                    onChanged: _setPassagersAdditionnelsActifs,
+                    activeThumbColor: const Color(0xFF29F58B),
+                    title: const Text(
+                      'Passagers additionnels',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    subtitle: Text(
+                      'Activer pour ajouter d\'autres voyageurs sur ce billet',
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.55),
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+              if (_showPassengersSection) ...[
+                const SizedBox(height: 16),
+                _buildDraftPassengersBlock(
+                  title: _isVenteCaissier
+                      ? 'Passagers additionnels'
+                      : 'Autres passagers',
+                ),
+              ],
+              const SizedBox(height: 16),
+              if (_isVenteCaissier)
+                DropdownButtonFormField<int>(
+                  isExpanded: true,
+                  initialValue: _clientPassagerCategorieSiegeId,
+                  items: _categoriesSiege
+                      .map((c) => _categorieDropdownItem(c.idCategorieSiege))
+                      .toList(),
+                  onChanged: _categoriesSiege.isEmpty
+                      ? null
+                      : (value) {
+                          setState(() {
+                            _clientPassagerCategorieSiegeId = value;
+                            _syncPlacesAndMontant();
+                          });
+                        },
+                  decoration: _inputDecoration('Catégorie de siège (client)'),
+                )
+              else
+                DropdownButtonFormField<int>(
+                  isExpanded: true,
+                  initialValue: _selfCategorieSiegeId,
+                  items: _categoriesSiege
+                      .map((c) => _categorieDropdownItem(c.idCategorieSiege))
+                      .toList(),
+                  onChanged: _categoriesSiege.isEmpty
+                      ? null
+                      : (value) {
+                          setState(() {
+                            _selfCategorieSiegeId = value;
+                            _syncPlacesAndMontant();
+                          });
+                        },
+                  decoration: _inputDecoration('Catégorie de siège (Vous)'),
+                ),
+              Padding(
+                padding: const EdgeInsets.only(top: 6, left: 4, right: 4),
+                child: Text(
+                  _isVenteCaissier
+                      ? 'Choisissez une catégorie avec des places libres sur ce voyage. '
+                            'Si la vente échoue (ex. VP complet), essayez une autre catégorie.'
+                      : 'Indépendante des catégories choisies pour les autres passagers.',
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.45),
+                    fontSize: 11,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              _buildField(
+                controller: _montantPayeController,
+                label: 'Montant payé',
+                keyboardType: TextInputType.number,
+                validator: (v) {
+                  final value = double.tryParse((v ?? '').trim()) ?? 0;
+                  final total = _montantTotal;
+                  if (total <= 0) {
+                    return 'Total indisponible';
+                  }
+                  if (value <= 0 || value > total) {
+                    return '> 0 et ≤ ${total.toStringAsFixed(0)}';
+                  }
+                  return null;
+                },
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Rappel total: ${_montantTotal.toStringAsFixed(0)} $_suffixeDevise',
+                style: const TextStyle(color: Color(0xFF00E676)),
+              ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                key: ValueKey<String>('methode_$_methodePaiement'),
+                initialValue: _isCaissier
+                    ? (_methodePaiement == 'MOBILE_MONEY' ||
+                              _methodePaiement == 'CARTE_BANCAIRE' ||
+                              _methodePaiement == 'CASH')
+                          ? _methodePaiement
+                          : 'MOBILE_MONEY'
+                    : (_methodePaiement == 'MOBILE_MONEY' ||
+                          _methodePaiement == 'CARTE_BANCAIRE')
+                    ? _methodePaiement
+                    : 'MOBILE_MONEY',
+                items: _isCaissier
+                    ? const [
+                        DropdownMenuItem(
+                          value: 'MOBILE_MONEY',
+                          child: Text('Mobile Money'),
+                        ),
+                        DropdownMenuItem(value: 'CASH', child: Text('Cash')),
+                        DropdownMenuItem(
+                          value: 'CARTE_BANCAIRE',
+                          child: Text('Carte'),
+                        ),
+                      ]
+                    : const [
+                        DropdownMenuItem(
+                          value: 'MOBILE_MONEY',
+                          child: Text('Mobile Money'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'CARTE_BANCAIRE',
+                          child: Text('Carte'),
+                        ),
+                      ],
+                onChanged: _handlePaymentMethodChanged,
+                decoration: _inputDecoration('Méthode de paiement'),
+              ),
+              const SizedBox(height: 20),
+            ],
             ElevatedButton(
-              onPressed: _isLoading ? null : _submit,
+              onPressed:
+                  (_isLoading ||
+                      _isVoyageDepartPasse(widget.voyage) ||
+                      (_isVenteCaissier && _selectedClient == null))
+                  ? null
+                  : _submit,
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF00E676),
+                backgroundColor: _isVoyageDepartPasse(widget.voyage)
+                    ? Colors.white24
+                    : const Color(0xFF00E676),
                 foregroundColor: Colors.black,
                 minimumSize: const Size.fromHeight(48),
               ),
@@ -774,7 +1353,13 @@ class _ReservationFormScreenState extends State<ReservationFormScreen> {
                       height: 20,
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
-                  : const Text('Valider la reservation'),
+                  : Text(
+                      _isVoyageDepartPasse(widget.voyage)
+                          ? 'Voyage passé'
+                          : (_isVenteCaissier
+                                ? 'Valider la vente'
+                                : 'Valider la reservation'),
+                    ),
             ),
           ],
         ),
@@ -782,7 +1367,70 @@ class _ReservationFormScreenState extends State<ReservationFormScreen> {
     );
   }
 
-  Widget _buildDraftPassengersBlock() {
+  Widget _buildCaissierClientSection() {
+    final c = _selectedClient;
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1A1A1A),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: const Color(0xFF29F58B).withValues(alpha: 0.35),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Client de la vente',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 8),
+          if (c != null) ...[
+            Text(
+              c.nomClient,
+              style: const TextStyle(
+                color: Color(0xFF29F58B),
+                fontWeight: FontWeight.w600,
+                fontSize: 15,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              '${c.telephone} · ${c.emailClient}',
+              style: TextStyle(color: Colors.white.withValues(alpha: 0.6)),
+            ),
+          ] else
+            Text(
+              'Aucun client sélectionné.',
+              style: TextStyle(color: Colors.white.withValues(alpha: 0.55)),
+            ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _openClientPicker,
+                  icon: const Icon(Icons.person_search_outlined),
+                  label: Text(c == null ? 'Choisir un client' : 'Changer'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: const Color(0xFF29F58B),
+                    side: const BorderSide(color: Color(0xFF29F58B)),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDraftPassengersBlock({String title = 'Autres passagers'}) {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
@@ -793,9 +1441,9 @@ class _ReservationFormScreenState extends State<ReservationFormScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Autres passagers',
-            style: TextStyle(
+          Text(
+            title,
+            style: const TextStyle(
               color: Colors.white,
               fontSize: 16,
               fontWeight: FontWeight.w600,
@@ -814,14 +1462,10 @@ class _ReservationFormScreenState extends State<ReservationFormScreen> {
           ),
           const SizedBox(height: 14),
           DropdownButtonFormField<int>(
+            isExpanded: true,
             initialValue: _draftCategorieSiegeId,
             items: _categoriesSiege
-                .map(
-                  (c) => DropdownMenuItem<int>(
-                    value: c.idCategorieSiege,
-                    child: Text('${c.codeCategorieSiege} - ${c.libelle}'),
-                  ),
-                )
+                .map((c) => _categorieDropdownItem(c.idCategorieSiege))
                 .toList(),
             onChanged: _categoriesSiege.isEmpty
                 ? null

@@ -1,12 +1,16 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:rusa/screens/ProfileImageViewScreen.dart';
 import 'package:rusa/screens/client/AllVoyagesScreen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:rusa/screens/client/voyageDetails.dart';
 import 'package:rusa/widgets/ProfileImageWidget.dart';
+import 'package:rusa/widgets/voyage_periode_selector.dart';
 import 'package:rusa/services/api_service.dart';
 import 'package:rusa/services/cache_service.dart';
 import 'package:rusa/models/voyage_model.dart';
+import 'package:rusa/utils/voyage_periode_filter.dart';
 
 class SearchTripScreen extends StatefulWidget {
   const SearchTripScreen({super.key});
@@ -16,44 +20,42 @@ class SearchTripScreen extends StatefulWidget {
 }
 
 class _SearchTripScreenState extends State<SearchTripScreen> {
-  static const String _defaultProfileAsset = 'assets/images/profil.jpg';
+  static const int _homePageSize = 10;
+
   bool _showSearchBar = false;
   String _userName = '';
   String? _userPhotoUrl;
   List<Voyage> _voyages = [];
   bool _isLoadingVoyages = false;
+  VoyagePeriode _periode = VoyagePeriode.jour;
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
+  Timer? _searchDebounce;
+
+  bool _isVoyageDepartPasse(Voyage voyage) {
+    final raw = voyage.dateDepart.trim();
+    if (raw.isEmpty) return false;
+    final parsed = DateTime.tryParse(raw);
+    if (parsed == null) return false;
+    final local = parsed.isUtc ? parsed.toLocal() : parsed;
+    final depDay = DateTime(local.year, local.month, local.day);
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    return depDay.isBefore(today);
+  }
 
   @override
   void initState() {
     super.initState();
     _loadUserData();
-    _loadVoyagesWithCacheFallback();
-    _retryLoadCacheIfNeeded();
+    _loadVoyages();
   }
 
   @override
   void dispose() {
+    _searchDebounce?.cancel();
     _searchController.dispose();
     super.dispose();
-  }
-
-  List<Voyage> _getFilteredVoyages() {
-    final q = _searchQuery.trim().toLowerCase();
-    if (q.isEmpty) return _voyages;
-
-    return _voyages.where((v) {
-      final fields = [
-        v.villeDepart,
-        v.villeArrivee,
-        v.numeroBus,
-        v.libelleTypeBus,
-        v.date,
-        v.heure,
-      ];
-      return fields.any((f) => f.toLowerCase().contains(q));
-    }).toList();
   }
 
   /// Villes les plus présentes dans les trajets (départ + arrivée), pour les tags « Plus demandés ».
@@ -94,6 +96,14 @@ class _SearchTripScreenState extends State<SearchTripScreen> {
         selection: TextSelection.collapsed(offset: text.length),
       );
       _showSearchBar = true;
+    });
+    _scheduleSearchReload();
+  }
+
+  void _scheduleSearchReload() {
+    _searchDebounce?.cancel();
+    _searchDebounce = Timer(const Duration(milliseconds: 450), () {
+      if (mounted) _loadVoyages();
     });
   }
 
@@ -149,6 +159,7 @@ class _SearchTripScreenState extends State<SearchTripScreen> {
                       _searchQuery = '';
                       _searchController.clear();
                     });
+                    _loadVoyages();
                   }
                 },
               );
@@ -157,14 +168,6 @@ class _SearchTripScreenState extends State<SearchTripScreen> {
         ),
       ],
     );
-  }
-
-  Future<void> _loadVoyagesWithCacheFallback() async {
-    await _loadVoyagesFromCache();
-    if (!mounted) return;
-    if (_voyages.isEmpty) {
-      await _refreshVoyages();
-    }
   }
 
   Future<void> _loadUserData() async {
@@ -181,82 +184,51 @@ class _SearchTripScreenState extends State<SearchTripScreen> {
     }
   }
 
-  Future<void> _loadVoyagesFromCache() async {
+  Future<void> _loadVoyages() async {
     if (!mounted) return;
-    setState(() {
-      _isLoadingVoyages = true;
-    });
+    setState(() => _isLoadingVoyages = true);
 
     try {
-      final cachedVoyages = await CacheService.getVoyages();
-      debugPrint(
-        'ACCUEIL: voyages cache = ${cachedVoyages == null ? "null" : cachedVoyages.length}',
+      final q = _searchQuery.trim();
+      final response = await ApiService.getVoyagesPaged(
+        pageNumber: 1,
+        pageSize: _homePageSize,
+        searchTerm: q.isEmpty ? null : q,
+        periode: _periode.apiValue,
+        sortBy: 'dateDepart',
+        sortDescending: false,
       );
-      if (cachedVoyages != null && mounted) {
-        setState(() {
-          _voyages = cachedVoyages;
-        });
-      }
-    } catch (e) {
-      debugPrint('Erreur lors du chargement du cache voyages: $e');
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isLoadingVoyages = false;
-        });
-      }
-    }
-  }
 
-  Future<void> _retryLoadCacheIfNeeded() async {
-    await Future<void>.delayed(const Duration(milliseconds: 900));
-    if (!mounted || _voyages.isNotEmpty) return;
+      if (!mounted) return;
 
-    final cachedVoyages = await CacheService.getVoyages();
-    if (!mounted) return;
+      final raw = response?.data ?? [];
+      final list = VoyagePeriodeFilter.apply(raw, _periode);
+      await CacheService.saveVoyages(list);
 
-    if (cachedVoyages != null && cachedVoyages.isNotEmpty) {
       setState(() {
-        _voyages = cachedVoyages;
+        _voyages = list;
+        _isLoadingVoyages = false;
       });
-      debugPrint(
-        'ACCUEIL: cache rechargé après délai (${cachedVoyages.length})',
-      );
+    } catch (e) {
+      debugPrint('Erreur chargement voyages accueil: $e');
+      if (mounted) {
+        setState(() => _isLoadingVoyages = false);
+      }
     }
   }
 
-  Future<void> _refreshVoyages() async {
-    if (!mounted) return;
-    setState(() {
-      _isLoadingVoyages = true;
-    });
-
-    try {
-      final voyageResponse = await ApiService.getAllVoyages();
-      if (voyageResponse.isNotEmpty) {
-        await CacheService.saveVoyages(voyageResponse);
-        if (!mounted) return;
-        setState(() {
-          _voyages = voyageResponse;
-        });
-      }
-    } catch (e) {
-      debugPrint('Erreur lors du rafraîchissement des voyages: $e');
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isLoadingVoyages = false;
-        });
-      }
-    }
+  void _openAllVoyages() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => AllVoyagesScreen(initialPeriode: _periode),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final safeProfileAsset = (_userPhotoUrl ?? '').trim().isNotEmpty
-        ? _userPhotoUrl!
-        : _defaultProfileAsset;
-    final filteredVoyages = _getFilteredVoyages();
+    final hasProfilePhoto = (_userPhotoUrl ?? '').trim().isNotEmpty;
 
     return Scaffold(
       body: SafeArea(
@@ -265,25 +237,26 @@ class _SearchTripScreenState extends State<SearchTripScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Profil utilisateur
               Row(
                 children: [
                   ProfileImageWidget(
-                    imagePath: safeProfileAsset,
+                    imagePath: '',
                     imageUrl: _userPhotoUrl,
                     userName: _userName,
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => ProfileImageViewScreen(
-                            imagePath: safeProfileAsset,
-                            imageUrl: _userPhotoUrl,
-                            userName: _userName,
-                          ),
-                        ),
-                      );
-                    },
+                    onTap: hasProfilePhoto
+                        ? () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => ProfileImageViewScreen(
+                                  imagePath: '',
+                                  imageUrl: _userPhotoUrl,
+                                  userName: _userName,
+                                ),
+                              ),
+                            );
+                          }
+                        : () {},
                   ),
                   const SizedBox(width: 12),
                   Text(
@@ -305,12 +278,14 @@ class _SearchTripScreenState extends State<SearchTripScreen> {
                           _searchQuery = '';
                         }
                       });
+                      if (!_showSearchBar) {
+                        _loadVoyages();
+                      }
                     },
                   ),
                 ],
               ),
               const SizedBox(height: 20),
-              // Barre de recherche conditionnelle
               AnimatedContainer(
                 duration: const Duration(milliseconds: 300),
                 curve: Curves.easeInOut,
@@ -326,6 +301,7 @@ class _SearchTripScreenState extends State<SearchTripScreen> {
                           controller: _searchController,
                           onChanged: (value) {
                             setState(() => _searchQuery = value);
+                            _scheduleSearchReload();
                           },
                           style: const TextStyle(color: Colors.white),
                           decoration: const InputDecoration(
@@ -343,34 +319,16 @@ class _SearchTripScreenState extends State<SearchTripScreen> {
                     : null,
               ),
               _buildPopularCitiesSection(),
-              const SizedBox(height: 24),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'Prochains voyages',
-                    style: Theme.of(
-                      context,
-                    ).textTheme.titleLarge?.copyWith(fontSize: 24),
-                  ),
-                  TextButton(
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => AllVoyagesScreen(),
-                        ),
-                      );
-                    },
-                    child: Text(
-                      "Voir tout",
-                      style: TextStyle(color: Color(0xFF00E676)),
-                    ),
-                  ),
-                ],
+              //const SizedBox(height: 20),
+              VoyagePeriodeSelector(
+                selected: _periode,
+                onPeriodeChanged: (p) {
+                  setState(() => _periode = p);
+                  _loadVoyages();
+                },
+                onVoirTout: _openAllVoyages,
               ),
               const SizedBox(height: 16),
-              // Liste des voyages
               Expanded(
                 child: _isLoadingVoyages
                     ? const Center(
@@ -381,22 +339,23 @@ class _SearchTripScreenState extends State<SearchTripScreen> {
                         ),
                       )
                     : RefreshIndicator(
-                        onRefresh: _refreshVoyages,
+                        onRefresh: _loadVoyages,
                         color: const Color(0xFF00E676),
-                        child: filteredVoyages.isEmpty
+                        child: _voyages.isEmpty
                             ? ListView(
+                                physics: const AlwaysScrollableScrollPhysics(),
                                 children: [
                                   SizedBox(
                                     height:
                                         MediaQuery.of(context).size.height *
-                                        0.3,
+                                        0.25,
                                   ),
                                   Center(
                                     child: Text(
                                       _searchQuery.trim().isEmpty
-                                          ? 'Aucun voyage disponible'
+                                          ? 'Aucun voyage pour cette période'
                                           : 'Aucun résultat pour cette recherche',
-                                      style: TextStyle(
+                                      style: const TextStyle(
                                         color: Colors.white54,
                                         fontSize: 16,
                                       ),
@@ -405,10 +364,10 @@ class _SearchTripScreenState extends State<SearchTripScreen> {
                                 ],
                               )
                             : ListView.builder(
-                                itemCount: filteredVoyages.length,
+                                physics: const AlwaysScrollableScrollPhysics(),
+                                itemCount: _voyages.length,
                                 itemBuilder: (context, index) {
-                                  final voyage = filteredVoyages[index];
-                                  return _buildVoyageCard(voyage);
+                                  return _buildVoyageCard(_voyages[index]);
                                 },
                               ),
                       ),
@@ -421,164 +380,192 @@ class _SearchTripScreenState extends State<SearchTripScreen> {
   }
 
   Widget _buildVoyageCard(Voyage voyage) {
+    final isPassed = _isVoyageDepartPasse(voyage);
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        onTap: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => SeatSelectionScreen(voyage: voyage),
-            ),
-          );
-        },
+        onTap: isPassed
+            ? null
+            : () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => SeatSelectionScreen(voyage: voyage),
+                  ),
+                );
+              },
         borderRadius: BorderRadius.circular(20),
         child: Container(
           margin: const EdgeInsets.only(bottom: 16),
           padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
-            color: const Color(0xFF222222),
+            color: isPassed ? const Color(0xFF1A1A1A) : const Color(0xFF222222),
             borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: Colors.white12),
+            border: Border.all(
+              color: isPassed ? Colors.white10 : Colors.white12,
+            ),
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Route principale avec villes sur la même ligne
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      voyage.villeDepart,
-                      style: TextStyle(
-                        color: const Color(0xFF00E676),
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                  const Icon(
-                    Icons.arrow_forward,
-                    color: Color(0xFF00E676),
-                    size: 20,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      voyage.villeArrivee,
-                      textAlign: TextAlign.right,
-                      style: TextStyle(
-                        color: const Color(0xFF00E676),
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              // Informations horaires et date
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: Colors.white10,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: const Icon(
-                      Icons.access_time,
-                      color: Color(0xFF00E676),
-                      size: 16,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Départ',
-                        style: TextStyle(color: Colors.white54, fontSize: 12),
-                      ),
-                      Text(
-                        voyage.heure,
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
+          child: Opacity(
+            opacity: isPassed ? 0.55 : 1.0,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        voyage.villeDepart,
+                        style: const TextStyle(
+                          color: Color(0xFF00E676),
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
                         ),
                       ),
-                    ],
-                  ),
-                  const SizedBox(width: 24),
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: Colors.white10,
-                      borderRadius: BorderRadius.circular(8),
                     ),
-                    child: const Icon(
-                      Icons.calendar_today,
+
+                    const Icon(
+                      Icons.arrow_forward,
                       color: Color(0xFF00E676),
-                      size: 16,
+                      size: 20,
                     ),
-                  ),
-                  const SizedBox(width: 12),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Date',
-                        style: TextStyle(color: Colors.white54, fontSize: 12),
-                      ),
-                      Text(
-                        voyage.date,
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
+
+                    Expanded(
+                      child: Text(
+                        voyage.villeArrivee,
+                        textAlign: TextAlign.right,
+                        style: const TextStyle(
+                          color: Color(0xFF00E676),
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
                         ),
                       ),
-                    ],
-                  ),
-                ],
-              ),
-              if (voyage.tarifs.isNotEmpty) ...[
-                const SizedBox(height: 14),
-                Text(
-                  'Tarifs par catégorie',
-                  style: TextStyle(color: Colors.white54, fontSize: 12),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 6),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: voyage.tarifs
-                      .map(
-                        (t) => Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 6,
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Colors.white10,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Icon(
+                        Icons.access_time,
+                        color: Color(0xFF00E676),
+                        size: 16,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Départ',
+                          style: TextStyle(color: Colors.white54, fontSize: 12),
+                        ),
+                        Text(
+                          voyage.heure,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
                           ),
-                          decoration: BoxDecoration(
-                            color: Colors.white10,
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(color: Colors.white12),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(width: 24),
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Colors.white10,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Icon(
+                        Icons.calendar_today,
+                        color: Color(0xFF00E676),
+                        size: 16,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Date',
+                          style: TextStyle(color: Colors.white54, fontSize: 12),
+                        ),
+                        Text(
+                          voyage.date,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
                           ),
-                          child: Text(
-                            '${t.libelle}: ${t.prix.toStringAsFixed(0)} FC',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w500,
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.event_seat,
+                      color: Color(0xFF00E676),
+                      size: 16,
+                    ),
+                    const SizedBox(width: 10),
+                    Text(
+                      voyage.placesDisponiblesTotal > 0
+                          ? '${voyage.placesDisponiblesTotal} siège(s) dispo'
+                          : 'Complet',
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.55),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+                if (voyage.tarifs.isNotEmpty) ...[
+                  const SizedBox(height: 14),
+                  Text(
+                    'Tarifs par catégorie',
+                    style: TextStyle(color: Colors.white54, fontSize: 12),
+                  ),
+                  const SizedBox(height: 6),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: voyage.tarifs
+                        .map(
+                          (t) => Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 6,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.white10,
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(color: Colors.white12),
+                            ),
+                            child: Text(
+                              '${t.libelle}: ${t.prix.toStringAsFixed(0)} FC',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                              ),
                             ),
                           ),
-                        ),
-                      )
-                      .toList(),
-                ),
+                        )
+                        .toList(),
+                  ),
+                ],
               ],
-            ],
+            ),
           ),
         ),
       ),

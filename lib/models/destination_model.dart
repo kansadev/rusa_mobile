@@ -3,6 +3,7 @@ class Destination {
   final String villeDepart;
   final String villeArrivee;
   final double montant;
+  final String? jourDepart;
   final bool statut;
   final String dateCreation;
   final String? dateModification;
@@ -15,6 +16,7 @@ class Destination {
     required this.villeDepart,
     required this.villeArrivee,
     required this.montant,
+    this.jourDepart,
     required this.statut,
     required this.dateCreation,
     this.dateModification,
@@ -29,6 +31,7 @@ class Destination {
       villeDepart: json['villeDepart'] ?? '',
       villeArrivee: json['villeArrivee'] ?? '',
       montant: (json['montant'] ?? 0).toDouble(),
+      jourDepart: json['jourDepart']?.toString(),
       statut: json['statut'] ?? false,
       dateCreation: json['dateCreation'] ?? '',
       dateModification: json['dateModification'],
@@ -44,6 +47,7 @@ class Destination {
       'villeDepart': villeDepart,
       'villeArrivee': villeArrivee,
       'montant': montant,
+      if (jourDepart != null) 'jourDepart': jourDepart,
       'statut': statut,
       'dateCreation': dateCreation,
       'dateModification': dateModification,

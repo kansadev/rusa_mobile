@@ -91,6 +91,8 @@ class PaiementWithSiteData {
   final double montantPaye;
   final String methodePaiement;
   final String referenceTransaction;
+  final String? phone;
+  final String? codeDevisePaiement;
   final int idUtilisateur;
   final int idSociete;
   final int idSite;
@@ -100,6 +102,8 @@ class PaiementWithSiteData {
     required this.montantPaye,
     required this.methodePaiement,
     String? referenceTransaction,
+    this.phone,
+    this.codeDevisePaiement,
     required this.idUtilisateur,
     required this.idSociete,
     required this.idSite,
@@ -115,9 +119,41 @@ class PaiementWithSiteData {
       'montantPaye': montantPaye,
       'methodePaiement': methodePaiement,
       'referenceTransaction': referenceTransaction,
+      if (phone != null) 'phone': phone,
+      if (codeDevisePaiement != null) 'codeDevisePaiement': codeDevisePaiement,
       'idUtilisateur': idUtilisateur,
       'idSociete': idSociete,
       'idSite': idSite,
     };
   }
+
+  /// Payload `POST /api/Reservation/reservation_with_paiement_electronique`.
+  Map<String, dynamic> toJsonElectronic() {
+    final phoneValue = phone?.trim();
+    return {
+      'montantAPaye': montantAPaye,
+      'methodePaiement': methodePaiement,
+      if (codeDevisePaiement != null && codeDevisePaiement!.trim().isNotEmpty)
+        'codeDevisePaiement': codeDevisePaiement,
+      if (phoneValue != null && phoneValue.isNotEmpty) 'phone': phoneValue,
+      'idUtilisateur': idUtilisateur,
+      'idSociete': idSociete,
+      'idSite': idSite,
+    };
+  }
+}
+
+/// Résultat d'un appel `with-passengers-and-paiement` (succès ou message d'échec).
+class ReservationSubmitResult<T> {
+  final T? response;
+  final String? errorMessage;
+  final Map<String, dynamic>? pendingData;
+
+  const ReservationSubmitResult({
+    this.response,
+    this.errorMessage,
+    this.pendingData,
+  });
+
+  bool get isSuccess => response != null || pendingData != null;
 }

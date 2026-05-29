@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:rusa/screens/client/AcceuilScreen.dart';
 import 'package:rusa/screens/client/AllVoyagesScreen.dart';
+import 'package:rusa/screens/client/ClientBilletCheckScreen.dart';
 import 'package:rusa/screens/client/ReservationsScreen.dart';
 import 'package:rusa/screens/client/ProfileScreen.dart';
 
@@ -18,8 +19,9 @@ class _MyNavigationWrapperState extends State<MyNavigationWrapper> {
   // Liste des écrans correspondants
   final List<Widget> _screens = [
     const SearchTripScreen(),
-    const AllVoyagesScreen(),
+    const AllVoyagesScreen(showBack: false),
     const ReservationsScreen(),
+    const ClientBilletCheckScreen(),
     const ProfileScreen(),
   ];
 
@@ -47,6 +49,10 @@ class _MyNavigationWrapperState extends State<MyNavigationWrapper> {
           BottomNavigationBarItem(
             icon: Icon(Icons.receipt_long_rounded),
             label: 'Réservations',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.qr_code_scanner_rounded),
+            label: 'Vérifier billet',
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.person_rounded),

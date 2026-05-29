@@ -1,18 +1,32 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:rusa/models/auth_models.dart';
 import 'package:rusa/models/voyage_model.dart';
 import 'package:rusa/models/create_reservation_request.dart';
 import 'package:rusa/models/reservation_with_paiement_request.dart';
 import 'package:rusa/services/api_service.dart';
+import 'package:rusa/services/cache_service.dart';
 import 'package:rusa/services/session_service.dart';
 import 'package:rusa/screens/client/TicketReceiptScreen.dart';
 import 'package:rusa/screens/client/BusDetailsScreen.dart';
 import 'package:rusa/screens/client/ReservationFormScreen.dart';
+import 'package:rusa/screens/client/VehiclePhotosGalleryScreen.dart';
+import 'package:rusa/screens/SeatViewScreen.dart';
 
 class SeatSelectionScreen extends StatefulWidget {
   final Voyage voyage;
+  final Client? client;
+  final bool showBackButton;
 
-  const SeatSelectionScreen({super.key, required this.voyage});
+  const SeatSelectionScreen({
+    super.key,
+    required this.voyage,
+    this.client,
+    this.showBackButton = true,
+  });
 
   @override
   State<SeatSelectionScreen> createState() => _SeatSelectionScreenState();
@@ -23,18 +37,116 @@ class _SeatSelectionScreenState extends State<SeatSelectionScreen> {
   int totalSeats = 16;
   List<int> bookedSeats = [];
 
+  bool _isCaissier = false;
+
+  /// Flux vente caissier (rôle ou client bénéficiaire déjà choisi).
+  bool get _isVenteCaissier => _isCaissier || widget.client != null;
+
   // Gestion du carousel
   final PageController _pageController = PageController();
   int _currentPage = 0;
-  final List<String> _carouselImages = [
+
+  static const _fallbackCarouselImages = <String>[
     'assets/images/img1.png',
     'assets/images/img2.png',
     'assets/images/img1.png',
   ];
 
+  final List<Uint8List> _vehicleImages = [];
+
+  int get _carouselCount => _vehicleImages.isNotEmpty
+      ? _vehicleImages.length
+      : _fallbackCarouselImages.length;
+
+  static const double _carouselImageRadius = 16;
+
+  void _openPhotoGallery({int initialIndex = 0}) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => VehiclePhotosGalleryScreen(
+          memoryImages: List<Uint8List>.from(_vehicleImages),
+          assetImages: List<String>.from(_fallbackCarouselImages),
+          initialIndex: initialIndex,
+          title: widget.voyage.numeroBus.isNotEmpty
+              ? 'Bus ${widget.voyage.numeroBus}'
+              : 'Photos du véhicule',
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCarouselImage(int index) {
+    final borderRadius = BorderRadius.circular(_carouselImageRadius);
+    final child = _vehicleImages.isNotEmpty
+        ? Image.memory(
+            _vehicleImages[index],
+            fit: BoxFit.contain,
+            width: double.infinity,
+            height: double.infinity,
+          )
+        : Image.asset(
+            _fallbackCarouselImages[index],
+            fit: BoxFit.contain,
+            width: double.infinity,
+            height: double.infinity,
+          );
+
+    return Hero(
+      tag: 'vehicle_photo_$index',
+      child: ClipRRect(
+        borderRadius: borderRadius,
+        child: ColoredBox(color: const Color(0xFF151515), child: child),
+      ),
+    );
+  }
+
   @override
   void initState() {
     super.initState();
+    _isCaissier = widget.client != null;
+    _vehicleImages.addAll(_decodeVehicleImages());
+    _loadRoleContext();
+  }
+
+  List<Uint8List> _decodeVehicleImages() {
+    final photos = widget.voyage.photosVehicules;
+    if (photos.isEmpty) return const <Uint8List>[];
+
+    final out = <Uint8List>[];
+    for (final p in photos) {
+      final decoded = _decodeBase64Image(p.photoBase64);
+      if (decoded != null) out.add(decoded);
+    }
+    return out;
+  }
+
+  Uint8List? _decodeBase64Image(String raw) {
+    final trimmed = raw.trim();
+    if (trimmed.isEmpty) return null;
+    try {
+      final cleaned = trimmed.contains('base64,')
+          ? trimmed.split('base64,').last
+          : trimmed;
+      return base64Decode(cleaned);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> _loadRoleContext() async {
+    if (widget.client != null) {
+      if (mounted) setState(() => _isCaissier = true);
+      return;
+    }
+    final auth = await CacheService.getAuthResponse();
+    if (!mounted || auth == null) return;
+    final primaryRoleName = auth.primaryRole.nom.toLowerCase().trim();
+    final roleName = primaryRoleName.isNotEmpty
+        ? primaryRoleName
+        : auth.nomRole.toLowerCase().trim();
+    if (!mounted) return;
+    setState(() => _isCaissier = roleName.contains('caiss'));
   }
 
   @override
@@ -129,9 +241,27 @@ class _SeatSelectionScreenState extends State<SeatSelectionScreen> {
     }
   }
 
+  bool _isVoyageDepartPasse(Voyage v) {
+    final raw = v.dateDepart.trim();
+    if (raw.isEmpty) return false;
+    final parsed = DateTime.tryParse(raw);
+    if (parsed == null) return false;
+
+    final local = parsed.isUtc ? parsed.toLocal() : parsed;
+    final depDay = DateTime(local.year, local.month, local.day);
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    return depDay.isBefore(today);
+  }
+
+  double _carouselSectionHeight(BuildContext context) {
+    final h = MediaQuery.sizeOf(context).height;
+    return (h * 0.38).clamp(280.0, 420.0);
+  }
+
   @override
   Widget build(BuildContext context) {
-    final size = MediaQuery.of(context).size;
+    final carouselHeight = _carouselSectionHeight(context);
 
     return Scaffold(
       backgroundColor: const Color(0xFF121212),
@@ -140,7 +270,7 @@ class _SeatSelectionScreenState extends State<SeatSelectionScreen> {
           children: [
             // Section supérieure avec l'image
             Container(
-              height: size.height * 0.25,
+              height: carouselHeight,
               decoration: const BoxDecoration(
                 gradient: LinearGradient(
                   begin: Alignment.topCenter,
@@ -158,14 +288,58 @@ class _SeatSelectionScreenState extends State<SeatSelectionScreen> {
                         _currentPage = index;
                       });
                     },
-                    itemCount: _carouselImages.length,
+                    itemCount: _carouselCount,
                     itemBuilder: (context, index) {
-                      return Center(
-                        child: Padding(
-                          padding: const EdgeInsets.all(16.0),
-                          child: Image.asset(
-                            _carouselImages[index],
-                            fit: BoxFit.contain,
+                      return Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
+                        child: Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            onTap: () => _openPhotoGallery(initialIndex: index),
+                            borderRadius: BorderRadius.circular(
+                              _carouselImageRadius,
+                            ),
+                            child: Stack(
+                              fit: StackFit.expand,
+                              children: [
+                                _buildCarouselImage(index),
+                                if (_carouselCount > 1)
+                                  Positioned(
+                                    right: 10,
+                                    bottom: 10,
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                        vertical: 4,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: Colors.black.withValues(
+                                          alpha: 0.55,
+                                        ),
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: const Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(
+                                            Icons.fullscreen,
+                                            color: Colors.white,
+                                            size: 16,
+                                          ),
+                                          SizedBox(width: 4),
+                                          Text(
+                                            'Agrandir',
+                                            style: TextStyle(
+                                              color: Colors.white,
+                                              fontSize: 11,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
                           ),
                         ),
                       );
@@ -180,7 +354,7 @@ class _SeatSelectionScreenState extends State<SeatSelectionScreen> {
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: List.generate(
-                        _carouselImages.length,
+                        _carouselCount,
                         (index) => Container(
                           margin: const EdgeInsets.symmetric(horizontal: 4),
                           width: _currentPage == index ? 12 : 8,
@@ -208,15 +382,7 @@ class _SeatSelectionScreenState extends State<SeatSelectionScreen> {
                   Positioned(
                     top: 16,
                     right: 16,
-                    child: _buildCircularButton(Icons.more_vert_rounded, () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) =>
-                              BusDetailsScreen(busId: widget.voyage.idVehicule),
-                        ),
-                      );
-                    }),
+                    child: _buildVoyageOptionsMenu(),
                   ),
                 ],
               ),
@@ -264,6 +430,7 @@ class _SeatSelectionScreenState extends State<SeatSelectionScreen> {
   }
 
   Widget _buildContent() {
+    final isPassed = _isVoyageDepartPasse(widget.voyage);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -279,7 +446,7 @@ class _SeatSelectionScreenState extends State<SeatSelectionScreen> {
                   Text(
                     '${widget.voyage.villeDepart} - ${widget.voyage.villeArrivee}',
                     style: GoogleFonts.caveat(
-                      fontSize: 30,
+                      fontSize: 20,
                       fontWeight: FontWeight.bold,
                       color: Colors.white,
                     ),
@@ -468,30 +635,38 @@ class _SeatSelectionScreenState extends State<SeatSelectionScreen> {
         ),
         const SizedBox(height: 24),
 
-        // Bouton "Reserver"
+        // Bouton réservation (client) ou vente (caissier)
         SizedBox(
           width: double.infinity,
           height: 50,
           child: ElevatedButton(
             style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF00E676),
+              backgroundColor: isPassed
+                  ? Colors.white24
+                  : const Color(0xFF00E676),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(20),
               ),
             ),
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) =>
-                      ReservationFormScreen(voyage: widget.voyage),
-                ),
-              );
-            },
-            child: const Text(
-              'Reserver',
+            onPressed: isPassed
+                ? null
+                : () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => ReservationFormScreen(
+                          voyage: widget.voyage,
+                          client: widget.client,
+                        ),
+                      ),
+                    );
+                  },
+            child: Text(
+              isPassed
+                  ? 'Voyage passé'
+                  : (_isVenteCaissier ? 'Vendre le billet' : 'Réserver'),
               style: TextStyle(
-                color: Colors.black,
+                color: isPassed ? Colors.white70 : Colors.black,
                 fontSize: 16,
                 fontWeight: FontWeight.bold,
               ),
@@ -515,6 +690,96 @@ class _SeatSelectionScreenState extends State<SeatSelectionScreen> {
         child: Icon(icon, color: Colors.white, size: 20),
       ),
     );
+  }
+
+  Widget _buildVoyageOptionsMenu() {
+    return PopupMenuButton<String>(
+      offset: const Offset(0, 48),
+      color: const Color(0xFF2A2A2A),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      onSelected: _onVoyageMenuSelected,
+      itemBuilder: (context) => [
+        const PopupMenuItem(
+          value: 'seats',
+          child: Row(
+            children: [
+              Icon(
+                Icons.event_seat_outlined,
+                color: Color(0xFF00E676),
+                size: 20,
+              ),
+              SizedBox(width: 12),
+              Text('Sièges disponibles', style: TextStyle(color: Colors.white)),
+            ],
+          ),
+        ),
+        const PopupMenuItem(
+          value: 'bus',
+          child: Row(
+            children: [
+              Icon(
+                Icons.directions_bus_outlined,
+                color: Colors.white70,
+                size: 20,
+              ),
+              SizedBox(width: 12),
+              Text('Détails du bus', style: TextStyle(color: Colors.white)),
+            ],
+          ),
+        ),
+      ],
+      child: Container(
+        width: 45,
+        height: 45,
+        decoration: const BoxDecoration(
+          color: Colors.white12,
+          shape: BoxShape.circle,
+        ),
+        child: const Icon(
+          Icons.more_vert_rounded,
+          color: Colors.white,
+          size: 20,
+        ),
+      ),
+    );
+  }
+
+  void _onVoyageMenuSelected(String value) {
+    switch (value) {
+      case 'seats':
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => SeatViewScreen(
+              idVoyage: widget.voyage.id,
+              title: 'Sièges disponibles',
+              subtitle: [
+                '${widget.voyage.villeDepart} → ${widget.voyage.villeArrivee}',
+                if (widget.voyage.numeroBus.isNotEmpty)
+                  'Bus ${widget.voyage.numeroBus}',
+              ].join(' · '),
+            ),
+          ),
+        );
+        break;
+      case 'bus':
+        if (widget.voyage.idVehicule <= 0) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Véhicule non renseigné pour ce voyage.'),
+            ),
+          );
+          return;
+        }
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) =>
+                BusDetailsScreen(busId: widget.voyage.idVehicule),
+          ),
+        );
+        break;
+    }
   }
 
   void _showReservationOptionsDialog() {

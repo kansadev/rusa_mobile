@@ -167,7 +167,7 @@ class _CaissierClientDetailsScreenState
                     Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (context) => const AllVoyagesScreen(),
+                        builder: (context) => AllVoyagesScreen(client: client),
                       ),
                     );
                   },

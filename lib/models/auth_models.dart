@@ -214,6 +214,38 @@ class Utilisateur {
       'primaryRole': primaryRole?.toJson(),
     };
   }
+
+  Utilisateur copyWith({
+    String? nomComplet,
+    String? email,
+    String? telephone,
+    String? photoUrl,
+    String? lieuNaissance,
+    String? dateNaissance,
+    String? genre,
+  }) {
+    return Utilisateur(
+      idUtilisateur: idUtilisateur,
+      referenceUtilisateur: referenceUtilisateur,
+      nomComplet: nomComplet ?? this.nomComplet,
+      email: email ?? this.email,
+      telephone: telephone ?? this.telephone,
+      photoUrl: photoUrl ?? this.photoUrl,
+      lieuNaissance: lieuNaissance ?? this.lieuNaissance,
+      dateNaissance: dateNaissance ?? this.dateNaissance,
+      genre: genre ?? this.genre,
+      doitChangerMotDePasse: doitChangerMotDePasse,
+      statut: statut,
+      idRole: idRole,
+      idSociete: idSociete,
+      adresseResidence: adresseResidence,
+      idAgent: idAgent,
+      idClient: idClient,
+      idSite: idSite,
+      roles: roles,
+      primaryRole: primaryRole,
+    );
+  }
 }
 
 class Role {

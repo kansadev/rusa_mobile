@@ -5,6 +5,73 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:rusa/models/reservation_with_paiement_response.dart';
 import 'package:rusa/services/api_service.dart';
 
+/// Début de la fenêtre côté app : embarquement autorisé au plus tôt avant le départ.
+const Duration _kEmbarquementMaxAvantDepart = Duration(hours: 6);
+
+/// Fin de la fenêtre : tolérance après l’heure prévue du trajet.
+const Duration _kEmbarquementMaxApresDepart = Duration(minutes: 45);
+
+String _formatDateHeureCourt(DateTime d) {
+  final dd = d.day.toString().padLeft(2, '0');
+  final mm = d.month.toString().padLeft(2, '0');
+  final y = d.year;
+  final hh = d.hour.toString().padLeft(2, '0');
+  final min = d.minute.toString().padLeft(2, '0');
+  return '$dd/$mm/$y à $hh:$min';
+}
+
+/// Date/heure de départ prévue pour le contrôle d’embarquement (QR caissier).
+DateTime? _parseDepartPrevuePourEmbarquement(ReservationData r) {
+  final raw = r.dateVoyage?.trim();
+  if (raw == null || raw.isEmpty) return null;
+  final parsed = DateTime.tryParse(raw);
+  if (parsed == null) return null;
+  final local = parsed.isUtc ? parsed.toLocal() : parsed;
+  final hv = r.heureVoyage;
+  if (hv != null && local.hour == 0 && local.minute == 0 && local.second == 0) {
+    return DateTime(
+      local.year,
+      local.month,
+      local.day,
+      hv.hours,
+      hv.minutes,
+      hv.seconds,
+    );
+  }
+  return local;
+}
+
+/// Règle locale : hors fenêtre → pas de bouton « embarquer » (l’API peut aussi refuser).
+({bool autorise, String? message}) _evaluerFenetreEmbarquement(
+  ReservationData r,
+) {
+  final depart = _parseDepartPrevuePourEmbarquement(r);
+  if (depart == null) {
+    return (autorise: true, message: null);
+  }
+  final now = DateTime.now();
+  final debutFenetre = depart.subtract(_kEmbarquementMaxAvantDepart);
+  final finFenetre = depart.add(_kEmbarquementMaxApresDepart);
+  if (now.isBefore(debutFenetre)) {
+    return (
+      autorise: false,
+      message:
+          'Trop tôt pour embarquer ce passager. '
+          'Ouverture à partir du ${_formatDateHeureCourt(debutFenetre)} '
+          '(départ prévu ${_formatDateHeureCourt(depart)}).',
+    );
+  }
+  if (now.isAfter(finFenetre)) {
+    return (
+      autorise: false,
+      message:
+          'Fenêtre d’embarquement dépassée pour ce trajet '
+          '(le départ prévu était ${_formatDateHeureCourt(depart)}).',
+    );
+  }
+  return (autorise: true, message: null);
+}
+
 class BilletQrScannerScreen extends StatefulWidget {
   const BilletQrScannerScreen({super.key});
 
@@ -109,12 +176,15 @@ class _BilletQrScannerScreenState extends State<BilletQrScannerScreen> {
               final idPassager = b?.idReservationPassenger ?? 0;
               final idBillet = b?.id ?? 0;
               final dejaUtilise = b?.isUsed == true;
-              final peutEmbarquer = b != null &&
+              final fenetreEmb = _evaluerFenetreEmbarquement(reservation);
+              final peutEmbarquer =
+                  b != null &&
                   !dejaUtilise &&
                   !embarquementOk &&
                   idSociete > 0 &&
                   idPassager > 0 &&
-                  idBillet > 0;
+                  idBillet > 0 &&
+                  fenetreEmb.autorise;
 
               Future<void> onEmbarquer() async {
                 setModal(() {
@@ -232,7 +302,10 @@ class _BilletQrScannerScreenState extends State<BilletQrScannerScreen> {
                           padding: EdgeInsets.only(top: 8),
                           child: Text(
                             'Détail billet absent : embarquement impossible depuis cet écran.',
-                            style: TextStyle(color: Colors.orange, fontSize: 13),
+                            style: TextStyle(
+                              color: Colors.orange,
+                              fontSize: 13,
+                            ),
                           ),
                         )
                       else if (idPassager <= 0)
@@ -241,7 +314,22 @@ class _BilletQrScannerScreenState extends State<BilletQrScannerScreen> {
                           child: Text(
                             'Identifiant passager (réservation) absent : '
                             'l’API doit renvoyer idReservationPassenger sur le billet.',
-                            style: TextStyle(color: Colors.orange, fontSize: 13),
+                            style: TextStyle(
+                              color: Colors.orange,
+                              fontSize: 13,
+                            ),
+                          ),
+                        )
+                      else if (!fenetreEmb.autorise &&
+                          fenetreEmb.message != null)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: Text(
+                            fenetreEmb.message!,
+                            style: const TextStyle(
+                              color: Colors.orange,
+                              fontSize: 13,
+                            ),
                           ),
                         ),
                       if (embarquementOk) ...[
@@ -301,9 +389,8 @@ class _BilletQrScannerScreenState extends State<BilletQrScannerScreen> {
                         children: [
                           Expanded(
                             child: OutlinedButton(
-                              onPressed: () =>
-                                  Navigator.pop(sheetContext),
-                              child: const Text('Scanner encore'),
+                              onPressed: () => Navigator.pop(sheetContext),
+                              child: const Text('Recommencer'),
                             ),
                           ),
                           const SizedBox(width: 10),

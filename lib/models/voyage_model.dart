@@ -1,3 +1,14 @@
+/// Période pour `GET /api/Voyage/paged` (`periode` query).
+enum VoyagePeriode {
+  jour('Jour', "Aujourd'hui"),
+  hebdomadaire('Hebdomadaire', 'Cette sem.'),
+  mensuel('Mensuel', 'Ce mois');
+
+  const VoyagePeriode(this.apiValue, this.label);
+  final String apiValue;
+  final String label;
+}
+
 class Voyage {
   final int id;
   final String dateDepart;
@@ -21,6 +32,8 @@ class Voyage {
   final String villeDepart;
   final String villeArrivee;
   final List<VoyageTarif> tarifs;
+  final List<CategorieSiegeDisponible> repartitionCategorieSiegesDisponible;
+  final List<PhotoVehicule> photosVehicules;
 
   Voyage({
     required this.id,
@@ -45,6 +58,8 @@ class Voyage {
     required this.villeDepart,
     required this.villeArrivee,
     this.tarifs = const [],
+    this.repartitionCategorieSiegesDisponible = const [],
+    this.photosVehicules = const [],
   });
 
   factory Voyage.fromJson(Map<String, dynamic> json) {
@@ -90,6 +105,23 @@ class Voyage {
               ?.map((e) => VoyageTarif.fromJson(Map<String, dynamic>.from(e as Map)))
               .toList() ??
           const [],
+      repartitionCategorieSiegesDisponible:
+          (json['repartitionCategorieSiegesDisponible'] as List?)
+                  ?.map(
+                    (e) => CategorieSiegeDisponible.fromJson(
+                      Map<String, dynamic>.from(e as Map),
+                    ),
+                  )
+                  .toList() ??
+              const [],
+      photosVehicules: (json['photosVehicules'] as List?)
+              ?.map(
+                (e) => PhotoVehicule.fromJson(
+                  Map<String, dynamic>.from(e as Map),
+                ),
+              )
+              .toList() ??
+          const [],
     );
   }
 
@@ -118,7 +150,17 @@ class Voyage {
       'villeDepart': villeDepart,
       'villeArrivee': villeArrivee,
       'tarifs': tarifs.map((t) => t.toJson()).toList(),
+      'repartitionCategorieSiegesDisponible':
+          repartitionCategorieSiegesDisponible.map((r) => r.toJson()).toList(),
+      'photosVehicules': photosVehicules.map((p) => p.toJson()).toList(),
     };
+  }
+
+  int get placesDisponiblesTotal {
+    if (repartitionCategorieSiegesDisponible.isEmpty) return 0;
+    return repartitionCategorieSiegesDisponible
+        .map((r) => r.nombreSiege)
+        .fold(0, (a, b) => a + b);
   }
 
   // Getters pour un accès facile aux informations
@@ -137,6 +179,143 @@ class Voyage {
     final timeParts = heure.split(':');
     return '${dateParts[2]}/${dateParts[1]}/${dateParts[0]} à ${timeParts[0]}:${timeParts[1]}';
   }
+}
+
+/// Réponse paginée de `GET /api/Voyage/paged`.
+class VoyagePagedResponse {
+  final List<Voyage> data;
+  final int totalCount;
+  final int pageNumber;
+  final int pageSize;
+  final int totalPages;
+  final bool hasPreviousPage;
+  final bool hasNextPage;
+
+  VoyagePagedResponse({
+    required this.data,
+    required this.totalCount,
+    required this.pageNumber,
+    required this.pageSize,
+    required this.totalPages,
+    required this.hasPreviousPage,
+    required this.hasNextPage,
+  });
+
+  factory VoyagePagedResponse.fromJson(Map<String, dynamic> json) {
+    final rawList = json['data'];
+    final List<Voyage> rows = [];
+    if (rawList is List) {
+      for (final item in rawList) {
+        if (item is Map<String, dynamic>) {
+          rows.add(Voyage.fromJson(item));
+        } else if (item is Map) {
+          rows.add(Voyage.fromJson(Map<String, dynamic>.from(item)));
+        }
+      }
+    }
+
+    int asInt(dynamic v, int fallback) {
+      if (v is num) return v.toInt();
+      return int.tryParse('$v') ?? fallback;
+    }
+
+    return VoyagePagedResponse(
+      data: rows,
+      totalCount: asInt(json['totalCount'], 0),
+      pageNumber: asInt(json['pageNumber'], 1),
+      pageSize: asInt(json['pageSize'], 10),
+      totalPages: asInt(json['totalPages'], 1),
+      hasPreviousPage: json['hasPreviousPage'] as bool? ?? false,
+      hasNextPage: json['hasNextPage'] as bool? ?? false,
+    );
+  }
+}
+
+class CategorieSiegeDisponible {
+  final int idCategorieSiege;
+  final String codeCategorieSiege;
+  final String libelle;
+  final int nombreSiege;
+
+  CategorieSiegeDisponible({
+    required this.idCategorieSiege,
+    required this.codeCategorieSiege,
+    required this.libelle,
+    required this.nombreSiege,
+  });
+
+  factory CategorieSiegeDisponible.fromJson(Map<String, dynamic> json) {
+    return CategorieSiegeDisponible(
+      idCategorieSiege: json['idCategorieSiege'] ?? 0,
+      codeCategorieSiege: (json['codeCategorieSiege'] ?? '').toString(),
+      libelle: (json['libelle'] ?? '').toString(),
+      nombreSiege: json['nombreSiege'] is num
+          ? (json['nombreSiege'] as num).toInt()
+          : int.tryParse('${json['nombreSiege']}') ?? 0,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'idCategorieSiege': idCategorieSiege,
+        'codeCategorieSiege': codeCategorieSiege,
+        'libelle': libelle,
+        'nombreSiege': nombreSiege,
+      };
+}
+
+/// Photos véhicule renvoyées par `/api/Voyage/paged`.
+class PhotoVehicule {
+  final int idPhotoVehicule;
+  final int idVehicule;
+  final String photoBase64;
+  final int ordre;
+  final String originalFileName;
+  final String typeMIME;
+  final int fileSize;
+  final bool statut;
+  final String dateCreation;
+  final String? dateModification;
+
+  PhotoVehicule({
+    required this.idPhotoVehicule,
+    required this.idVehicule,
+    required this.photoBase64,
+    required this.ordre,
+    required this.originalFileName,
+    required this.typeMIME,
+    required this.fileSize,
+    required this.statut,
+    required this.dateCreation,
+    this.dateModification,
+  });
+
+  factory PhotoVehicule.fromJson(Map<String, dynamic> json) {
+    return PhotoVehicule(
+      idPhotoVehicule: json['idPhotoVehicule'] ?? 0,
+      idVehicule: json['idVehicule'] ?? 0,
+      photoBase64: (json['photoBase64'] ?? '').toString(),
+      ordre: json['ordre'] ?? 0,
+      originalFileName: (json['originalFileName'] ?? '').toString(),
+      typeMIME: (json['typeMIME'] ?? json['typeMime'] ?? '').toString(),
+      fileSize: json['fileSize'] ?? 0,
+      statut: json['statut'] ?? false,
+      dateCreation: (json['dateCreation'] ?? '').toString(),
+      dateModification: json['dateModification']?.toString(),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'idPhotoVehicule': idPhotoVehicule,
+        'idVehicule': idVehicule,
+        'photoBase64': photoBase64,
+        'ordre': ordre,
+        'originalFileName': originalFileName,
+        'typeMIME': typeMIME,
+        'fileSize': fileSize,
+        'statut': statut,
+        'dateCreation': dateCreation,
+        'dateModification': dateModification,
+      };
 }
 
 class VoyageTarif {

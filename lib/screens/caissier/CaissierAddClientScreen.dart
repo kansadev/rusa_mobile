@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:rusa/models/auth_models.dart';
 import 'package:rusa/services/api_service.dart';
 
 /// Formulaire d’inscription client depuis la caisse (client absent du système).
@@ -74,6 +75,23 @@ class _CaissierAddClientScreenState extends State<CaissierAddClientScreen> {
         body['idClient'] != null;
   }
 
+  Client? _clientFromBody(Map<String, dynamic>? body) {
+    if (body == null) return null;
+    try {
+      if (body['idClient'] != null) {
+        return Client.fromJson(Map<String, dynamic>.from(body));
+      }
+      final data = body['data'];
+      if (data is Map<String, dynamic>) {
+        return Client.fromJson(data);
+      }
+      if (data is Map) {
+        return Client.fromJson(Map<String, dynamic>.from(data));
+      }
+    } catch (_) {}
+    return null;
+  }
+
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate() || _isSubmitting) return;
 
@@ -108,7 +126,12 @@ class _CaissierAddClientScreenState extends State<CaissierAddClientScreen> {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text(msg), backgroundColor: _accent));
-        Navigator.pop(context, true);
+        final created = _clientFromBody(body);
+        if (created != null && created.idClient > 0) {
+          Navigator.pop(context, created);
+        } else {
+          Navigator.pop(context, true);
+        }
         return;
       }
 

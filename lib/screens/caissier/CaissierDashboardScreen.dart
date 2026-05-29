@@ -6,6 +6,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:rusa/screens/caissier/BilletQrScannerScreen.dart';
 import 'package:rusa/screens/caissier/CaissierAddClientScreen.dart';
 import 'package:rusa/screens/caissier/CaissierClientsListScreen.dart';
+import 'package:rusa/screens/caissier/CaissierVoyagePassagersScreen.dart';
 import 'package:rusa/services/api_service.dart';
 import 'package:rusa/services/cache_service.dart';
 
@@ -239,7 +240,17 @@ class _CaissierDashboardScreenState extends State<CaissierDashboardScreen> {
           );
         },
       ),
-      (icon: Icons.confirmation_num_outlined, onTap: () {}),
+      (
+        icon: Icons.people_outline,
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => const CaissierVoyagePassagersScreen(),
+            ),
+          );
+        },
+      ),
     ];
 
     return Row(
@@ -329,12 +340,7 @@ class _CaissierDashboardScreenState extends State<CaissierDashboardScreen> {
           fit: BoxFit.cover,
           width: double.infinity,
           height: double.infinity,
-          errorBuilder: (context, error, stackTrace) => Image.asset(
-            'assets/images/profil.jpg',
-            fit: BoxFit.cover,
-            width: double.infinity,
-            height: double.infinity,
-          ),
+          errorBuilder: (context, error, stackTrace) => _defaultAvatarIcon(),
         ),
       );
     }
@@ -349,17 +355,22 @@ class _CaissierDashboardScreenState extends State<CaissierDashboardScreen> {
             width: double.infinity,
             height: double.infinity,
             gaplessPlayback: true,
+            errorBuilder: (context, error, stackTrace) => _defaultAvatarIcon(),
           ),
         );
       }
     }
 
-    return ClipOval(
-      child: Image.asset(
-        'assets/images/profil.jpg',
-        fit: BoxFit.cover,
-        width: double.infinity,
-        height: double.infinity,
+    return _defaultAvatarIcon();
+  }
+
+  Widget _defaultAvatarIcon() {
+    return const SizedBox.expand(
+      child: ColoredBox(
+        color: Color(0xFF093120),
+        child: Center(
+          child: Icon(Icons.person_rounded, color: Colors.white, size: 26),
+        ),
       ),
     );
   }

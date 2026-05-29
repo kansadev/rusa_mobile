@@ -16,7 +16,7 @@ class _CaissierNavigationWrapperState extends State<CaissierNavigationWrapper> {
 
   final List<Widget> _screens = const [
     CaissierDashboardScreen(),
-    AllVoyagesScreen(),
+    AllVoyagesScreen(showBack: false),
     CaissierProfileScreen(),
   ];
 

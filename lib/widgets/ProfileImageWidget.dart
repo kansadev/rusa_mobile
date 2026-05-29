@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 import 'package:rusa/screens/ProfileImageViewScreen.dart';
 
 class ProfileImageWidget extends StatelessWidget {
-  static const String _defaultAssetImage = 'assets/images/profil.jpg';
   final String imagePath;
   final String? imageUrl;
   final double size;
@@ -58,9 +57,6 @@ class ProfileImageWidget extends StatelessWidget {
   }
 
   Widget _buildProfileImage() {
-    final safeAssetPath = imagePath.trim().isNotEmpty
-        ? imagePath
-        : _defaultAssetImage;
     final rawImage = imageUrl?.trim() ?? '';
     final hasRemoteImage = rawImage.isNotEmpty;
 
@@ -71,12 +67,7 @@ class ProfileImageWidget extends StatelessWidget {
           fit: BoxFit.cover,
           width: size - 4,
           height: size - 4,
-          errorBuilder: (context, error, stackTrace) => Image.asset(
-            safeAssetPath,
-            fit: BoxFit.cover,
-            width: size - 4,
-            height: size - 4,
-          ),
+          errorBuilder: (context, error, stackTrace) => _defaultAvatarIcon(),
         );
       }
 
@@ -88,6 +79,7 @@ class ProfileImageWidget extends StatelessWidget {
           width: size - 4,
           height: size - 4,
           gaplessPlayback: true,
+          errorBuilder: (context, error, stackTrace) => _defaultAvatarIcon(),
         );
       }
 
@@ -96,20 +88,34 @@ class ProfileImageWidget extends StatelessWidget {
         fit: BoxFit.cover,
         width: size - 4,
         height: size - 4,
-        errorBuilder: (context, error, stackTrace) => Image.asset(
-          safeAssetPath,
-          fit: BoxFit.cover,
-          width: size - 4,
-          height: size - 4,
-        ),
+        errorBuilder: (context, error, stackTrace) => _defaultAvatarIcon(),
       );
     }
 
-    return Image.asset(
-      safeAssetPath,
-      fit: BoxFit.cover,
-      width: size - 4,
-      height: size - 4,
+    final assetPath = imagePath.trim();
+    if (assetPath.isNotEmpty && !assetPath.startsWith('http')) {
+      return Image.asset(
+        assetPath,
+        fit: BoxFit.cover,
+        width: size - 4,
+        height: size - 4,
+        errorBuilder: (context, error, stackTrace) => _defaultAvatarIcon(),
+      );
+    }
+
+    return _defaultAvatarIcon();
+  }
+
+  Widget _defaultAvatarIcon() {
+    return const ColoredBox(
+      color: Color(0xFF1A1A1A),
+      child: Center(
+        child: Icon(
+          Icons.person_rounded,
+          color: Color(0xFF00E676),
+          size: 28,
+        ),
+      ),
     );
   }
 

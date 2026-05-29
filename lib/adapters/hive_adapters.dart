@@ -164,6 +164,7 @@ class DestinationAdapter extends TypeAdapter<Destination> {
       villeDepart: reader.readString(),
       villeArrivee: reader.readString(),
       montant: reader.readDouble(),
+      jourDepart: null,
       statut: reader.readBool(),
       dateCreation: reader.readString(),
       dateModification: reader.readString(),

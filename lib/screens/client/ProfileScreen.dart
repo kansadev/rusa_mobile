@@ -186,6 +186,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
     const textColor = Colors.white;
     const subtitleColor = Colors.white54;
     const accentGreen = Color(0xFF00E676); // Vert fluo du Switch
+    const tileSplash = Color(0x14FFFFFF);
+    const tileHover = Color(0x0AFFFFFF);
 
     return Scaffold(
       backgroundColor: backgroundColor,
@@ -217,6 +219,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   // --- CARTE PROFIL ---
                   _buildCard(cardColor, [
                     ListTile(
+                      tileColor: Colors.transparent,
+                      splashColor: tileSplash,
+                      hoverColor: tileHover,
                       contentPadding: const EdgeInsets.symmetric(
                         horizontal: 16,
                         vertical: 8,
@@ -228,7 +233,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           _client?.photoUrl,
                         ),
                         child:
-                            _buildProfileImageProvider(_client?.photoUrl) == null
+                            _buildProfileImageProvider(_client?.photoUrl) ==
+                                null
                             ? const Icon(
                                 Icons.person,
                                 color: Colors.black,
@@ -364,11 +370,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   // Widget utilitaire pour créer les blocs arrondis (Cartes)
   Widget _buildCard(Color color, List<Widget> children) {
-    return Container(
-      decoration: BoxDecoration(
-        color: color,
-        borderRadius: BorderRadius.circular(20),
-      ),
+    return Material(
+      color: color,
+      borderRadius: BorderRadius.circular(20),
+      clipBehavior: Clip.antiAlias,
       child: Column(children: children),
     );
   }
@@ -380,6 +385,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
     required VoidCallback onTap,
   }) {
     return ListTile(
+      tileColor: Colors.transparent,
+      splashColor: const Color(0x14FFFFFF),
+      hoverColor: const Color(0x0AFFFFFF),
       leading: Icon(icon, color: Colors.white70, size: 22),
       title: Text(
         title,
@@ -403,6 +411,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
     required ValueChanged<bool> onChanged,
   }) {
     return ListTile(
+      tileColor: Colors.transparent,
+      splashColor: const Color(0x14FFFFFF),
+      hoverColor: const Color(0x0AFFFFFF),
       leading: Icon(icon, color: Colors.white70, size: 22),
       title: Text(
         title,
