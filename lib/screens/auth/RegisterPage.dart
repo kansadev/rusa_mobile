@@ -11,8 +11,6 @@ class RegisterPage extends StatefulWidget {
 }
 
 class _RegisterPageState extends State<RegisterPage> {
-  final PageController _pageController = PageController();
-  int _currentPage = 0;
   bool _isSubmitting = false;
 
   // Contrôleurs pour les champs du formulaire
@@ -22,40 +20,25 @@ class _RegisterPageState extends State<RegisterPage> {
   final TextEditingController _telephoneController = TextEditingController();
   final TextEditingController _emailClientController = TextEditingController();
   String _selectedGenre = 'Homme'; // Valeur par défaut pour le dropdown
-  final TextEditingController _provinceController = TextEditingController();
-  final TextEditingController _villeController = TextEditingController();
-  final TextEditingController _communeController = TextEditingController();
-  final TextEditingController _avenueController = TextEditingController();
-  final TextEditingController _numeroController = TextEditingController();
 
-  void _nextPage() {
-    if (_currentPage < 3) {
-      _pageController.nextPage(
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeIn,
-      );
-    }
+  @override
+  void dispose() {
+    _nomClientController.dispose();
+    _adresseClientController.dispose();
+    _telephoneController.dispose();
+    _emailClientController.dispose();
+    super.dispose();
   }
 
   Future<void> _submitRegistration() async {
     if (_isSubmitting) return;
 
-    final requiredValues = [
-      _nomClientController.text,
-      _emailClientController.text,
-      _telephoneController.text,
-      _adresseClientController.text,
-      _provinceController.text,
-      _villeController.text,
-      _communeController.text,
-      _avenueController.text,
-      _numeroController.text,
-    ];
-
-    if (requiredValues.any((v) => v.trim().isEmpty)) {
+    // Seuls le nom et le téléphone sont obligatoires.
+    if (_nomClientController.text.trim().isEmpty ||
+        _telephoneController.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Veuillez remplir tous les champs'),
+          content: Text('Le nom et le numéro de téléphone sont obligatoires.'),
           backgroundColor: Colors.red,
         ),
       );
@@ -71,11 +54,13 @@ class _RegisterPageState extends State<RegisterPage> {
         telephone: _telephoneController.text.trim(),
         adresseClient: _adresseClientController.text.trim(),
         genreClient: genre,
-        province: _provinceController.text.trim(),
-        ville: _villeController.text.trim(),
-        commune: _communeController.text.trim(),
-        avenue: _avenueController.text.trim(),
-        numero: _numeroController.text.trim(),
+        // Champs d'adresse détaillée optionnels : le client pourra les
+        // compléter plus tard depuis son profil.
+        province: '',
+        ville: '',
+        commune: '',
+        avenue: '',
+        numero: '',
         acceptTerms: true,
         subscribeNewsletter: true,
         marketingConsent: true,
@@ -84,20 +69,8 @@ class _RegisterPageState extends State<RegisterPage> {
       if (!mounted) return;
 
       if (result != null) {
-        final payload = result['data'] is Map<String, dynamic>
-            ? result['data'] as Map<String, dynamic>
-            : result;
-        final message =
-            (payload['welcomeMessage'] ??
-                    payload['message'] ??
-                    'Inscription réussie')
-                .toString();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(message),
-            backgroundColor: Colors.green,
-          ),
-        );
+        await _showDefaultPasswordDialog();
+        if (!mounted) return;
         Navigator.pushAndRemoveUntil(
           context,
           MaterialPageRoute(builder: (context) => const MyNavigationWrapper()),
@@ -116,6 +89,89 @@ class _RegisterPageState extends State<RegisterPage> {
     }
   }
 
+  Future<void> _showDefaultPasswordDialog() {
+    return showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1E1E1E),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+        ),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: const Color(0xFF00E676).withValues(alpha: 0.15),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.check_circle,
+                  color: Color(0xFF00E676), size: 26),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                'Compte créé',
+                style: GoogleFonts.poppins(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 18,
+                ),
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Votre compte a bien été créé. Votre mot de passe par défaut est :',
+              style: TextStyle(color: Colors.white70, fontSize: 14),
+            ),
+            const SizedBox(height: 14),
+            Center(
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                decoration: BoxDecoration(
+                  color: Colors.white10,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFF00E676)),
+                ),
+                child: Text(
+                  '123456',
+                  style: GoogleFonts.poppins(
+                    color: const Color(0xFF00E676),
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 4,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 14),
+            const Text(
+              'Pensez à le modifier depuis votre profil pour sécuriser votre compte.',
+              style: TextStyle(color: Colors.white54, fontSize: 13),
+            ),
+          ],
+        ),
+        actions: [
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFF00E676),
+              foregroundColor: Colors.black,
+            ),
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('J\'ai compris'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final keyboardInset = MediaQuery.of(context).viewInsets.bottom;
@@ -125,223 +181,104 @@ class _RegisterPageState extends State<RegisterPage> {
       body: SafeArea(
         child: SingleChildScrollView(
           keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-          padding: EdgeInsets.only(bottom: keyboardInset + 16),
+          padding: EdgeInsets.fromLTRB(30, 24, 30, keyboardInset + 24),
           child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const SizedBox(height: 20),
-              // Indicateur de progression
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 30.0),
-                child: LinearProgressIndicator(
-                  value: (_currentPage + 1) / 4,
-                  backgroundColor: Colors.white12,
-                  color: const Color(0xFF00E676),
+              Text(
+                'Créer un compte',
+                style: GoogleFonts.poppins(
+                  fontSize: 28,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
                 ),
               ),
-              const SizedBox(height: 20),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 30.0),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      'Étape ${_currentPage + 1}/4',
-                      style: const TextStyle(color: Colors.white54),
-                    ),
-                    Text(
-                      _currentPage == 0
-                          ? 'Infos Perso'
-                          : _currentPage == 1
-                          ? 'Contact'
-                          : _currentPage == 2
-                          ? 'Adresse 1'
-                          : 'Adresse 2',
-                      style: const TextStyle(
-                        color: Color(0xFF00E676),
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ],
-                ),
+              const Text(
+                'Le nom et le téléphone suffisent pour commencer.',
+                style: TextStyle(color: Colors.white54),
               ),
+              const SizedBox(height: 32),
+              _buildRegFieldWithController(
+                'Nom complet *',
+                Icons.person_outline,
+                _nomClientController,
+              ),
+              _buildRegFieldWithController(
+                'Téléphone *',
+                Icons.phone_android,
+                _telephoneController,
+                keyboardType: TextInputType.phone,
+              ),
+              _buildGenreDropdown(),
+              _buildRegFieldWithController(
+                'Email (facultatif)',
+                Icons.email_outlined,
+                _emailClientController,
+                keyboardType: TextInputType.emailAddress,
+              ),
+              _buildRegFieldWithController(
+                'Adresse complète (facultatif)',
+                Icons.home_outlined,
+                _adresseClientController,
+              ),
+              const Text(
+                '* Champs obligatoires. Vous pourrez compléter les autres '
+                'informations plus tard dans votre profil.',
+                style: TextStyle(color: Colors.white38, fontSize: 12),
+              ),
+              const SizedBox(height: 24),
               SizedBox(
-                height: MediaQuery.of(context).size.height * 0.55,
-                child: PageView(
-                  controller: _pageController,
-                  onPageChanged: (int page) => setState(() => _currentPage = page),
-                  physics:
-                      const BouncingScrollPhysics(), // Permet le swipe naturel
-                  children: [
-                    // Page 1: Informations personnelles
-                    _buildStep(
-                      title: 'Informations Personnelles',
-                      subtitle: 'Votre identité',
-                      fields: [
-                        _buildRegFieldWithController(
-                          'Nom complet',
-                          Icons.person_outline,
-                          _nomClientController,
-                        ),
-                        _buildGenreDropdown(),
-                      ],
+                width: double.infinity,
+                height: 55,
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF00E676),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(15),
                     ),
-                    // Page 2: Contact
-                    _buildStep(
-                      title: 'Coordonnées',
-                      subtitle: 'Comment vous contacter',
-                      fields: [
-                        _buildRegFieldWithController(
-                          'Email',
-                          Icons.email_outlined,
-                          _emailClientController,
-                        ),
-                        _buildRegFieldWithController(
-                          'Téléphone',
-                          Icons.phone_android,
-                          _telephoneController,
-                        ),
-                      ],
-                    ),
-                    // Page 3: Adresse principale
-                    _buildStep(
-                      title: 'Adresse Principale',
-                      subtitle: 'Votre lieu de résidence',
-                      fields: [
-                        _buildRegFieldWithController(
-                          'Adresse complète',
-                          Icons.home,
-                          _adresseClientController,
-                        ),
-                        _buildRegFieldWithController(
-                          'Province',
-                          Icons.location_city,
-                          _provinceController,
-                        ),
-                        _buildRegFieldWithController(
-                          'Ville',
-                          Icons.location_city,
-                          _villeController,
-                        ),
-                      ],
-                    ),
-                    // Page 4: Adresse détaillée
-                    _buildStep(
-                      title: 'Adresse Détaillée',
-                      subtitle: 'Complétez votre adresse',
-                      fields: [
-                        _buildRegFieldWithController(
-                          'Commune',
-                          Icons.apartment,
-                          _communeController,
-                        ),
-                        _buildRegFieldWithController(
-                          'Avenue',
-                          Icons.signpost,
-                          _avenueController,
-                        ),
-                        _buildRegFieldWithController(
-                          'Numéro',
-                          Icons.home,
-                          _numeroController,
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(30.0, 20.0, 30.0, 20.0),
-                child: SizedBox(
-                  width: double.infinity,
-                  height: 55,
-                  child: ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF00E676),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(15),
-                      ),
-                    ),
-                    onPressed: _isSubmitting
-                        ? null
-                        : (_currentPage == 3 ? _submitRegistration : _nextPage),
-                    child: _isSubmitting
-                        ? const SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              valueColor: AlwaysStoppedAnimation<Color>(
-                                Colors.black,
-                              ),
-                            ),
-                          )
-                        : Text(
-                            _currentPage == 3 ? 'Terminer' : 'Suivant',
-                            style: const TextStyle(
-                              color: Colors.black,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
                   ),
+                  onPressed: _isSubmitting ? null : _submitRegistration,
+                  child: _isSubmitting
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                              Colors.black,
+                            ),
+                          ),
+                        )
+                      : const Text(
+                          'Créer mon compte',
+                          style: TextStyle(
+                            color: Colors.black,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
                 ),
               ),
-              Padding(
-                padding: const EdgeInsets.only(bottom: 20.0),
-                child: Center(
-                  child: TextButton(
-                    onPressed: () {
-                      Navigator.pop(context);
-                    },
-                    child: RichText(
-                      text: const TextSpan(
-                        style: TextStyle(fontSize: 14, color: Colors.white54),
-                        children: [
-                          TextSpan(text: "Vous avez déjà un compte ? "),
-                          TextSpan(
-                            text: "Connectez-vous",
-                            style: TextStyle(color: Color(0xFF00E676)),
-                          ),
-                        ],
-                      ),
+              const SizedBox(height: 8),
+              Center(
+                child: TextButton(
+                  onPressed: () {
+                    Navigator.pop(context);
+                  },
+                  child: RichText(
+                    text: const TextSpan(
+                      style: TextStyle(fontSize: 14, color: Colors.white54),
+                      children: [
+                        TextSpan(text: "Vous avez déjà un compte ? "),
+                        TextSpan(
+                          text: "Connectez-vous",
+                          style: TextStyle(color: Color(0xFF00E676)),
+                        ),
+                      ],
                     ),
                   ),
                 ),
               ),
             ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildStep({
-    required String title,
-    required String subtitle,
-    required List<Widget> fields,
-  }) {
-    return Padding(
-      padding: const EdgeInsets.all(30.0),
-      child: LayoutBuilder(
-        builder: (context, constraints) => SingleChildScrollView(
-          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-          child: ConstrainedBox(
-            constraints: BoxConstraints(minHeight: constraints.maxHeight),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: GoogleFonts.poppins(
-                    fontSize: 28,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                  ),
-                ),
-                Text(subtitle, style: const TextStyle(color: Colors.white54)),
-                const SizedBox(height: 40),
-                ...fields,
-              ],
-            ),
           ),
         ),
       ),
@@ -395,12 +332,14 @@ class _RegisterPageState extends State<RegisterPage> {
     IconData icon,
     TextEditingController controller, {
     bool isPassword = false,
+    TextInputType? keyboardType,
   }) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 20.0),
       child: TextField(
         controller: controller,
         obscureText: isPassword,
+        keyboardType: keyboardType,
         style: const TextStyle(color: Colors.white),
         decoration: InputDecoration(
           labelText: label,

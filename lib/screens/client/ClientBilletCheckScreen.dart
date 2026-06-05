@@ -5,6 +5,8 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:rusa/models/billet_check_response.dart';
 import 'package:rusa/services/api_service.dart';
 
+import 'BilletReaffectationScreen.dart';
+
 class ClientBilletCheckScreen extends StatefulWidget {
   const ClientBilletCheckScreen({super.key});
 
@@ -92,107 +94,168 @@ class _ClientBilletCheckScreenState extends State<ClientBilletCheckScreen> {
   }
 
   Future<void> _showBilletStatus(BilletCheckResponse data) async {
-    final messenger = ScaffoldMessenger.of(context);
     final estUtilise = data.isUsed;
-    final autorise = data.embarquementAutorise && !data.voyageDejaPasse;
+    final expire = data.estExpire;
+    final autorise =
+        data.embarquementAutorise && !data.voyageDejaPasse && !expire;
+    final peutReaffecter = data.peutEtreReaffecte;
     final texteStatut = data.statutReservation ?? data.statut ?? '';
     final dateTexte = _formatMoment(data);
 
+    // Style selon l'état.
+    final _BilletStatusStyle style;
+    if (estUtilise) {
+      style = const _BilletStatusStyle(
+        color: Colors.redAccent,
+        icon: Icons.cancel_rounded,
+        titre: 'Billet déjà utilisé',
+        description: 'Ce billet a déjà été utilisé pour l’embarquement.',
+      );
+    } else if (expire) {
+      style = const _BilletStatusStyle(
+        color: Color(0xFFFFA726),
+        icon: Icons.timer_off_rounded,
+        titre: 'Billet expiré',
+        description: 'La validité de ce billet est dépassée.',
+      );
+    } else if (autorise) {
+      style = const _BilletStatusStyle(
+        color: Color(0xFF00E676),
+        icon: Icons.verified_rounded,
+        titre: 'Billet valide',
+        description: 'Ce billet est valide pour l’embarquement.',
+      );
+    } else {
+      style = const _BilletStatusStyle(
+        color: Color(0xFFFFA726),
+        icon: Icons.info_rounded,
+        titre: 'Billet non utilisable',
+        description: 'Ce billet ne peut pas être utilisé pour l’instant.',
+      );
+    }
+
     await showModalBottomSheet<void>(
       context: context,
+      isScrollControlled: true,
       isDismissible: true,
       backgroundColor: const Color(0xFF141A18),
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       builder: (ctx) {
         return Padding(
           padding: EdgeInsets.fromLTRB(
-            16,
-            14,
-            16,
+            20,
+            12,
+            20,
             16 + MediaQuery.paddingOf(ctx).bottom,
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Center(
-                child: Text(
-                  autorise && !estUtilise
-                      ? 'Billet valide'
-                      : 'Statut du billet',
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.white,
+                child: Container(
+                  width: 42,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.white24,
+                    borderRadius: BorderRadius.circular(2),
                   ),
                 ),
               ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Icon(
-                    estUtilise
-                        ? Icons.cancel_outlined
-                        : (autorise ? Icons.check_circle : Icons.info_outline),
-                    color: estUtilise
-                        ? Colors.redAccent
-                        : (autorise ? const Color(0xFF00E676) : Colors.orange),
+              const SizedBox(height: 20),
+              Center(
+                child: Container(
+                  width: 76,
+                  height: 76,
+                  decoration: BoxDecoration(
+                    color: style.color.withValues(alpha: 0.14),
+                    shape: BoxShape.circle,
                   ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      estUtilise
-                          ? 'Ce billet a déjà été utilisé.'
-                          : (autorise
-                                ? 'Votre billet est valide.'
-                                : (data.voyageDejaPasse
-                                      ? 'Le voyage associé à ce billet est déjà passé.'
-                                      : (data.message ??
-                                            'Ce billet ne peut pas être utilisé pour l’instant.'))),
-                      style: const TextStyle(
-                        color: Colors.white70,
-                        fontSize: 14,
+                  child: Icon(style.icon, color: style.color, size: 40),
+                ),
+              ),
+              const SizedBox(height: 14),
+              Text(
+                style.titre,
+                textAlign: TextAlign.center,
+                style: GoogleFonts.poppins(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.white,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                (data.message != null && data.message!.trim().isNotEmpty)
+                    ? data.message!.trim()
+                    : style.description,
+                textAlign: TextAlign.center,
+                style: GoogleFonts.poppins(
+                  fontSize: 14,
+                  color: Colors.white70,
+                ),
+              ),
+              const SizedBox(height: 18),
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.05),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Column(
+                  children: [
+                    _infoRow(Icons.confirmation_number_outlined,
+                        'Billet', '#${data.idBillet}'),
+                    if (dateTexte != '-') ...[
+                      const SizedBox(height: 10),
+                      _infoRow(Icons.event, 'Départ prévu', dateTexte),
+                    ],
+                    if (texteStatut.isNotEmpty) ...[
+                      const SizedBox(height: 10),
+                      _infoRow(Icons.flag_outlined, 'Réservation',
+                          texteStatut),
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(height: 18),
+              if (peutReaffecter) ...[
+                SizedBox(
+                  height: 50,
+                  child: FilledButton.icon(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: const Color(0xFF00E676),
+                      foregroundColor: Colors.black,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
                       ),
                     ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              const SizedBox(height: 4),
-              Text(
-                'Départ prévu : $dateTexte',
-                style: const TextStyle(color: Colors.white70),
-              ),
-              if (texteStatut.isNotEmpty) ...[
-                const SizedBox(height: 4),
-                Text(
-                  'Statut réservation : $texteStatut',
-                  style: const TextStyle(color: Colors.white70),
-                ),
-              ],
-              if (data.message != null && data.message!.trim().isNotEmpty) ...[
-                const SizedBox(height: 8),
-                Text(
-                  data.message!,
-                  style: const TextStyle(color: Colors.white70, fontSize: 13),
-                ),
-              ],
-              const SizedBox(height: 16),
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton(
-                  onPressed: () async {
-                    Navigator.pop(ctx);
-                    await _resetAndRestartScanner();
-                    messenger.showSnackBar(
-                      const SnackBar(
-                        content: Text('Vérification terminée.'),
-                        backgroundColor: Color(0xFF00E676),
+                    icon: const Icon(Icons.swap_horiz_rounded),
+                    label: Text(
+                      'Réaffecter ce billet',
+                      style: GoogleFonts.poppins(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
                       ),
-                    );
-                  },
+                    ),
+                    onPressed: () => _ouvrirReaffectation(ctx, data),
+                  ),
+                ),
+                const SizedBox(height: 10),
+              ],
+              SizedBox(
+                height: 48,
+                child: OutlinedButton(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.white70,
+                    side: const BorderSide(color: Colors.white24),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                  ),
+                  onPressed: () => Navigator.pop(ctx),
                   child: const Text('Fermer'),
                 ),
               ),
@@ -203,8 +266,69 @@ class _ClientBilletCheckScreenState extends State<ClientBilletCheckScreen> {
     );
   }
 
+  Widget _infoRow(IconData icon, String label, String value) {
+    return Row(
+      children: [
+        Icon(icon, size: 18, color: Colors.white54),
+        const SizedBox(width: 10),
+        Text(
+          label,
+          style: const TextStyle(color: Colors.white54, fontSize: 13),
+        ),
+        const Spacer(),
+        Flexible(
+          child: Text(
+            value,
+            textAlign: TextAlign.end,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _ouvrirReaffectation(
+    BuildContext sheetContext,
+    BilletCheckResponse data,
+  ) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final idSociete = await ApiService.getCurrentSocieteId();
+    if (!mounted) return;
+
+    // Ferme le bottomsheet avant d'ouvrir l'écran de réaffectation.
+    Navigator.pop(sheetContext);
+
+    final result = await Navigator.push<ReaffectationResult>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => BilletReaffectationScreen(
+          idBillet: data.idBillet,
+          idSociete: idSociete,
+        ),
+      ),
+    );
+
+    if (!mounted) return;
+    if (result != null && result.success) {
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(result.message),
+          backgroundColor: const Color(0xFF00E676),
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    return _buildScaffold();
+  }
+
+  Widget _buildScaffold() {
     return Scaffold(
       appBar: AppBar(
         title: Text(
@@ -269,4 +393,19 @@ class _ClientBilletCheckScreenState extends State<ClientBilletCheckScreen> {
       ),
     );
   }
+}
+
+/// Style visuel d'un état de billet dans le bottomsheet de vérification.
+class _BilletStatusStyle {
+  final Color color;
+  final IconData icon;
+  final String titre;
+  final String description;
+
+  const _BilletStatusStyle({
+    required this.color,
+    required this.icon,
+    required this.titre,
+    required this.description,
+  });
 }

@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "776587940799",
+    "project_id": "rusa-travel",
+    "storage_bucket": "rusa-travel.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:776587940799:android:d0ba85cf1b281d9e5d870a",
+        "android_client_info": {
+          "package_name": "com.rusa.travel"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCYDWfwX8pEINDlcfRWhpkQetmcu3KP0q8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

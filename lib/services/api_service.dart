@@ -24,6 +24,7 @@ import '../models/billet_check_response.dart';
 import '../models/voyage_sieges_disponibles_model.dart';
 import '../models/flexpay_verify_result.dart';
 import 'session_service.dart';
+import 'cache_service.dart';
 
 enum ApiEnvironment { dev, staging, production }
 
@@ -2430,6 +2431,91 @@ class ApiService {
     } catch (e) {
       debugPrint('checkBillet: $e');
       return BilletCheckApiResult(success: false, errorMessage: e.toString());
+    }
+  }
+
+  /// Société de l'utilisateur connecté (depuis le cache d'auth), défaut 1.
+  static Future<int> getCurrentSocieteId() async {
+    try {
+      final auth = await CacheService.getAuthResponse();
+      final id = auth?.utilisateur.idSociete ?? 0;
+      if (id > 0) return id;
+    } catch (e) {
+      debugPrint('getCurrentSocieteId: $e');
+    }
+    return 1;
+  }
+
+  /// Réaffecte un billet (jamais utilisé) vers un autre voyage.
+  /// `POST /api/Billet/societe/{idSociete}/billet/{idBillet}/reaffecter`.
+  static Future<ReaffectationResult> reaffecterBillet({
+    required int idSociete,
+    required int idBillet,
+    required int idVoyageCible,
+    bool confirmerPaiementDifferentiel = true,
+    String? methodePaiement,
+    String? referenceTransaction,
+    String? commentaire,
+  }) async {
+    if (idSociete <= 0 || idBillet <= 0 || idVoyageCible <= 0) {
+      return const ReaffectationResult(
+        success: false,
+        message: 'Données insuffisantes pour la réaffectation.',
+      );
+    }
+    try {
+      final headers = await _getHeaders();
+      final uri = Uri.parse(
+        '$baseUrl/Billet/societe/$idSociete/billet/$idBillet/reaffecter',
+      );
+      final body = json.encode({
+        'idVoyageCible': idVoyageCible,
+        'confirmerPaiementDifferentiel': confirmerPaiementDifferentiel,
+        if (methodePaiement != null && methodePaiement.trim().isNotEmpty)
+          'methodePaiement': methodePaiement.trim(),
+        if (referenceTransaction != null &&
+            referenceTransaction.trim().isNotEmpty)
+          'referenceTransaction': referenceTransaction.trim(),
+        if (commentaire != null && commentaire.trim().isNotEmpty)
+          'commentaire': commentaire.trim(),
+      });
+      debugPrint('Réaffectation billet: $uri — $body');
+      final response = await http.post(uri, headers: headers, body: body);
+      debugPrint('reaffecterBillet: ${response.statusCode} ${response.body}');
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        var msg = 'Billet réaffecté avec succès.';
+        try {
+          final decoded = json.decode(response.body);
+          if (decoded is Map) {
+            msg = decoded['message']?.toString() ?? msg;
+          }
+        } catch (_) {}
+        return ReaffectationResult(
+          success: true,
+          message: msg,
+          statusCode: response.statusCode,
+        );
+      }
+
+      var msg = 'Échec de la réaffectation (${response.statusCode}).';
+      try {
+        final decoded = json.decode(response.body);
+        if (decoded is Map) {
+          msg = decoded['message']?.toString() ??
+              decoded['detail']?.toString() ??
+              decoded['title']?.toString() ??
+              msg;
+        }
+      } catch (_) {}
+      return ReaffectationResult(
+        success: false,
+        message: msg,
+        statusCode: response.statusCode,
+      );
+    } catch (e) {
+      debugPrint('reaffecterBillet: $e');
+      return ReaffectationResult(success: false, message: e.toString());
     }
   }
 

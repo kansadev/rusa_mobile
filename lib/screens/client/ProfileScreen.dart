@@ -2,10 +2,15 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:rusa/models/auth_models.dart';
 import 'package:rusa/models/client_model.dart';
+import 'package:rusa/services/api_service.dart';
 import 'package:rusa/screens/client/ClientContactsScreen.dart';
+import 'package:rusa/screens/client/EditProfileScreen.dart';
 import 'package:rusa/services/session_service.dart';
 import 'package:rusa/services/cache_service.dart';
+import 'package:rusa/services/location_service.dart';
 import 'package:rusa/screens/auth/LoginScreen.dart';
 
 class ProfileScreen extends StatefulWidget {
@@ -22,6 +27,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
   // États pour les interrupteurs (Switches)
   bool _pauseNotifications = true;
   bool _darkMode = false;
+  bool _filterByMyCity = false;
+  bool _resolvingCity = false;
+  String? _myCity;
 
   ImageProvider? _buildProfileImageProvider(String? rawPhoto) {
     final value = rawPhoto?.trim() ?? '';
@@ -45,6 +53,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   @override
   void initState() {
     super.initState();
+    _loadCityFilterPref();
     // Charger les données en arrière-plan sans bloquer l'UI
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadUserData();
@@ -115,6 +124,93 @@ class _ProfileScreenState extends State<ProfileScreen> {
       });
     } else {
       setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _loadCityFilterPref() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (!mounted) return;
+      setState(() {
+        _filterByMyCity = prefs.getBool('filter_by_my_city') ?? false;
+        _myCity = prefs.getString('my_city');
+      });
+    } catch (_) {}
+  }
+
+  Future<void> _onToggleCityFilter(bool value) async {
+    if (!value) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('filter_by_my_city', false);
+      if (!mounted) return;
+      setState(() => _filterByMyCity = false);
+      return;
+    }
+
+    // Activation : résoudre la ville via la géolocalisation.
+    setState(() => _resolvingCity = true);
+    final result = await LocationService.getCurrentCity();
+    if (!mounted) return;
+    setState(() => _resolvingCity = false);
+
+    if (!result.success || result.city == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(result.error ?? 'Localisation indisponible.'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+      return;
+    }
+
+    final city = result.city!;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('filter_by_my_city', true);
+    await prefs.setString('my_city', city);
+    if (!mounted) return;
+    setState(() {
+      _filterByMyCity = true;
+      _myCity = city;
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Filtre activé : voyages au départ de $city'),
+        backgroundColor: const Color(0xFF00E676),
+      ),
+    );
+  }
+
+  Future<void> _openEditProfile() async {
+    final id = _client?.id ?? 0;
+    if (id <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Utilisateur introuvable.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+    final updated = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => EditProfileScreen(idUtilisateur: id),
+      ),
+    );
+    if (updated == true && mounted) {
+      setState(() => _isLoading = true);
+      // Rafraîchir le cache d'auth avec les données fraîches du serveur,
+      // afin que toute l'app reflète les modifications.
+      try {
+        final cachedAuth = await CacheService.getAuthResponse();
+        final freshUser = await ApiService.getUtilisateurById(id);
+        if (cachedAuth != null && freshUser != null) {
+          final map = cachedAuth.toJson();
+          map['utilisateur'] = freshUser.toJson();
+          await CacheService.saveAuthResponse(AuthResponse.fromJson(map));
+        }
+      } catch (_) {}
+      await _loadUserData();
     }
   }
 
@@ -263,9 +359,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         Icons.chevron_right,
                         color: subtitleColor,
                       ),
-                      onTap: () {
-                        // Navigation vers l'édition du profil si nécessaire
-                      },
+                      onTap: _openEditProfile,
                     ),
                   ]),
                   const SizedBox(height: 16),
@@ -285,6 +379,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       title: 'Paramètres généraux',
                       onTap: () {},
                     ),
+                    _buildCityFilterTile(accentGreen),
                   ]),
                   const SizedBox(height: 16),
 
@@ -292,7 +387,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   _buildCard(cardColor, [
                     _buildSwitchTile(
                       icon: Icons.dark_mode_outlined,
-                      title: 'Dark mode',
+                      title: 'Mode sombre',
                       value: _darkMode,
                       activeColor: accentGreen,
                       onChanged: (val) => setState(() => _darkMode = val),
@@ -399,6 +494,45 @@ class _ProfileScreenState extends State<ProfileScreen> {
         size: 22,
       ),
       onTap: onTap,
+    );
+  }
+
+  // Tuile dédiée au filtre des voyages selon la ville de l'utilisateur.
+  Widget _buildCityFilterTile(Color activeColor) {
+    final subtitle = _filterByMyCity && (_myCity?.trim().isNotEmpty ?? false)
+        ? 'Départ : ${_myCity!}'
+        : 'Afficher les voyages au départ de votre ville';
+    return ListTile(
+      tileColor: Colors.transparent,
+      splashColor: const Color(0x14FFFFFF),
+      hoverColor: const Color(0x0AFFFFFF),
+      leading: const Icon(Icons.location_on_outlined,
+          color: Colors.white70, size: 22),
+      title: const Text(
+        'Filtrer les voyages d\'après ma ville',
+        style: TextStyle(color: Colors.white, fontSize: 15),
+      ),
+      subtitle: Text(
+        subtitle,
+        style: const TextStyle(color: Colors.white54, fontSize: 12),
+      ),
+      trailing: _resolvingCity
+          ? const SizedBox(
+              width: 22,
+              height: 22,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF00E676)),
+              ),
+            )
+          : Switch(
+              value: _filterByMyCity,
+              onChanged: _resolvingCity ? null : _onToggleCityFilter,
+              activeThumbColor: Colors.white,
+              activeTrackColor: activeColor,
+              inactiveThumbColor: Colors.white,
+              inactiveTrackColor: Colors.white24,
+            ),
     );
   }
 

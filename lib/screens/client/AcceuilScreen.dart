@@ -11,6 +11,7 @@ import 'package:rusa/widgets/voyage_periode_selector.dart';
 import 'package:rusa/widgets/truncated_text.dart';
 import 'package:rusa/services/api_service.dart';
 import 'package:rusa/services/cache_service.dart';
+import 'package:rusa/services/location_service.dart';
 import 'package:rusa/models/voyage_model.dart';
 import 'package:rusa/utils/voyage_periode_filter.dart';
 
@@ -34,6 +35,9 @@ class _SearchTripScreenState extends State<SearchTripScreen> {
   String _searchQuery = '';
   Timer? _searchDebounce;
 
+  // Filtre « ville de départ = ma ville » (activé depuis le profil).
+  String? _departCityFilter;
+
   bool _isVoyageDepartPasse(Voyage voyage) {
     final raw = voyage.dateDepart.trim();
     if (raw.isEmpty) return false;
@@ -51,6 +55,10 @@ class _SearchTripScreenState extends State<SearchTripScreen> {
     super.initState();
     _loadUserData();
     _loadVoyages();
+    // Après l'affichage initial, vérifier un éventuel changement de ville.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _maybePromptCityChange();
+    });
   }
 
   @override
@@ -107,6 +115,132 @@ class _SearchTripScreenState extends State<SearchTripScreen> {
     _searchDebounce = Timer(const Duration(milliseconds: 450), () {
       if (mounted) _loadVoyages();
     });
+  }
+
+  /// Lit la préférence « filtrer par ma ville » (réglée dans le profil).
+  Future<void> _refreshDepartCityFilterPref() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final enabled = prefs.getBool('filter_by_my_city') ?? false;
+      final city = prefs.getString('my_city');
+      _departCityFilter =
+          (enabled && city != null && city.trim().isNotEmpty) ? city : null;
+    } catch (_) {
+      // En cas d'erreur, on conserve l'état précédent du filtre.
+    }
+  }
+
+  /// Si le filtre « ma ville » est actif, re-géolocalise l'utilisateur à
+  /// l'ouverture et propose, via un dialog, de mettre à jour la ville si elle
+  /// a changé depuis la dernière fois.
+  Future<void> _maybePromptCityChange() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final enabled = prefs.getBool('filter_by_my_city') ?? false;
+      if (!enabled) return;
+
+      final stored = prefs.getString('my_city')?.trim() ?? '';
+      final result = await LocationService.getCurrentCity();
+      final fresh = result.city?.trim();
+      if (!result.success || fresh == null || fresh.isEmpty) return;
+      if (fresh.toLowerCase() == stored.toLowerCase()) return;
+
+      if (!mounted) return;
+      final confirm = await _showCityChangeDialog(
+        ancienne: stored,
+        nouvelle: fresh,
+      );
+      if (confirm != true) return;
+
+      await prefs.setString('my_city', fresh);
+      if (!mounted) return;
+      setState(() => _departCityFilter = fresh);
+      _loadVoyages();
+    } catch (_) {
+      // Silencieux : on garde le filtre courant en cas d'erreur.
+    }
+  }
+
+  Future<bool?> _showCityChangeDialog({
+    required String ancienne,
+    required String nouvelle,
+  }) {
+    return showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1E1E1E),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+        ),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: const Color(0xFF00E676).withValues(alpha: 0.15),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.location_on,
+                  color: Color(0xFF00E676), size: 24),
+            ),
+            const SizedBox(width: 12),
+            const Expanded(
+              child: Text(
+                'Changement de ville',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 18,
+                ),
+              ),
+            ),
+          ],
+        ),
+        content: Text.rich(
+          TextSpan(
+            style: const TextStyle(color: Colors.white70, fontSize: 14),
+            children: [
+              const TextSpan(
+                text:
+                    'Nous avons détecté que vous avez récemment changé de ville. '
+                    'Voulez-vous mettre à jour le filtre des voyages sur ',
+              ),
+              TextSpan(
+                text: _formatCityLabel(nouvelle),
+                style: const TextStyle(
+                  color: Color(0xFF00E676),
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const TextSpan(text: ' ?'),
+              if (ancienne.isNotEmpty)
+                TextSpan(
+                  text: '\n\nVille actuelle du filtre : '
+                      '${_formatCityLabel(ancienne)}.',
+                  style: const TextStyle(color: Colors.white38, fontSize: 12),
+                ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text(
+              'Garder l\'ancienne',
+              style: TextStyle(color: Colors.white54),
+            ),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFF00E676),
+              foregroundColor: Colors.black,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Mettre à jour'),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _buildPopularCitiesSection() {
@@ -191,11 +325,19 @@ class _SearchTripScreenState extends State<SearchTripScreen> {
     setState(() => _isLoadingVoyages = true);
 
     try {
+      await _refreshDepartCityFilterPref();
       final q = _searchQuery.trim();
+      // Sans recherche manuelle, on envoie la ville détectée comme terme
+      // serveur pour réduire la charge ; le filtre local restreint au départ.
+      final serverTerm = q.isNotEmpty
+          ? q
+          : (_departCityFilter?.trim().isNotEmpty == true
+                ? _departCityFilter!.trim()
+                : null);
       final response = await ApiService.getVoyagesPaged(
         pageNumber: 1,
         pageSize: _homePageSize,
-        searchTerm: q.isEmpty ? null : q,
+        searchTerm: serverTerm,
         periode: _periode.apiValue,
         sortBy: 'dateDepart',
         sortDescending: false,
@@ -204,7 +346,17 @@ class _SearchTripScreenState extends State<SearchTripScreen> {
       if (!mounted) return;
 
       final raw = response?.data ?? [];
-      final list = VoyagePeriodeFilter.apply(raw, _periode);
+      var list = VoyagePeriodeFilter.apply(raw, _periode);
+
+      // Filtre local : ne garder que les voyages dont la ville de départ
+      // correspond à la ville détectée par géolocalisation.
+      final depart = _departCityFilter?.trim().toLowerCase();
+      if (depart != null && depart.isNotEmpty) {
+        list = list
+            .where((v) => v.villeDepart.trim().toLowerCase().contains(depart))
+            .toList();
+      }
+
       await CacheService.saveVoyages(list);
 
       setState(() {

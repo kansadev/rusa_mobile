@@ -81,6 +81,16 @@ class BilletCheckResponse {
     if (m == null) return false;
     return m.isBefore(DateTime.now());
   }
+
+  /// Le billet est expiré (validité dépassée) d'après le backend ou la date.
+  bool get estExpire {
+    final s = statut?.toLowerCase().replaceAll(RegExp(r'[\s_-]'), '') ?? '';
+    if (s.contains('expir')) return true;
+    return voyageDejaPasse;
+  }
+
+  /// Le billet peut être réaffecté : expiré et jamais utilisé.
+  bool get peutEtreReaffecte => estExpire && !isUsed;
 }
 
 HeureVoyage? _parseHeureString(String value) {
@@ -115,6 +125,19 @@ HeureVoyage? _parseHeureString(String value) {
     totalMinutes: totalMinutes,
     totalSeconds: totalSeconds.toDouble(),
   );
+}
+
+/// Résultat de l'appel `POST .../billet/{idBillet}/reaffecter`.
+class ReaffectationResult {
+  final bool success;
+  final String message;
+  final int? statusCode;
+
+  const ReaffectationResult({
+    required this.success,
+    required this.message,
+    this.statusCode,
+  });
 }
 
 /// Résultat de l'appel API check (succès HTTP + corps, ou erreur).

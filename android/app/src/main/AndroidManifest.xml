@@ -2,6 +2,10 @@
     <!-- Permissions réseau -->
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!-- Localisation (filtrer les voyages par ville de départ) -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+
     <!-- Permissions galerie/stockage pour export du billet -->
     <!-- Android 13+ -->
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />

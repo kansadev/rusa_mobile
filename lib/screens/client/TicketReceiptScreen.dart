@@ -11,8 +11,12 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:permission_handler/permission_handler.dart';
 import 'package:qr_flutter/qr_flutter.dart';
+import 'package:rusa/models/billet_check_response.dart';
 import 'package:rusa/models/reservation_with_paiement_response.dart';
+import 'package:rusa/services/api_service.dart';
 import 'package:saver_gallery/saver_gallery.dart';
+
+import 'BilletReaffectationScreen.dart';
 
 class TicketReceiptScreen extends StatefulWidget {
   final ReservationData? reservationData;
@@ -44,6 +48,56 @@ class _TicketReceiptScreenState extends State<TicketReceiptScreen> {
   void dispose() {
     _billetCarouselController.dispose();
     super.dispose();
+  }
+
+  /// Billets affichés (multi-billets ou billet unique).
+  List<BilletData> get _billetsAffichage => widget.billets.isNotEmpty
+      ? widget.billets
+      : (widget.billetData != null ? [widget.billetData!] : <BilletData>[]);
+
+  /// Billet actuellement visible dans le carrousel.
+  BilletData? get _currentBillet {
+    final list = _billetsAffichage;
+    if (list.isEmpty) return null;
+    final idx = _carouselIndex.clamp(0, list.length - 1);
+    return list[idx];
+  }
+
+  Future<void> _reporterBillet() async {
+    final billet = _currentBillet;
+    if (billet == null || billet.id <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Aucun billet à reporter.'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+      return;
+    }
+    final idSociete = billet.idSociete > 0
+        ? billet.idSociete
+        : await ApiService.getCurrentSocieteId();
+    if (!mounted) return;
+
+    final result = await Navigator.push<ReaffectationResult>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => BilletReaffectationScreen(
+          idBillet: billet.id,
+          idSociete: idSociete,
+        ),
+      ),
+    );
+
+    if (!mounted) return;
+    if (result != null && result.success) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(result.message),
+          backgroundColor: const Color(0xFF00E676),
+        ),
+      );
+    }
   }
 
   String _formatDate(String? dateString) {
@@ -510,10 +564,12 @@ class _TicketReceiptScreenState extends State<TicketReceiptScreen> {
                 _saveAsPdf();
               } else if (value == 'jpg') {
                 _saveAsJpg();
+              } else if (value == 'report') {
+                _reporterBillet();
               }
             },
-            itemBuilder: (context) => const [
-              PopupMenuItem<String>(
+            itemBuilder: (context) => [
+              const PopupMenuItem<String>(
                 value: 'pdf',
                 child: Row(
                   children: [
@@ -526,7 +582,7 @@ class _TicketReceiptScreenState extends State<TicketReceiptScreen> {
                   ],
                 ),
               ),
-              PopupMenuItem<String>(
+              const PopupMenuItem<String>(
                 value: 'jpg',
                 child: Row(
                   children: [
@@ -536,6 +592,18 @@ class _TicketReceiptScreenState extends State<TicketReceiptScreen> {
                   ],
                 ),
               ),
+              if (_currentBillet != null)
+                const PopupMenuItem<String>(
+                  value: 'report',
+                  child: Row(
+                    children: [
+                      Icon(Icons.event_repeat_outlined,
+                          color: Color(0xFF00E676)),
+                      SizedBox(width: 10),
+                      Text('Reporter le voyage'),
+                    ],
+                  ),
+                ),
             ],
           ),
         ],

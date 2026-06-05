@@ -79,6 +79,13 @@ class _ReservationFormScreenState extends State<ReservationFormScreen> {
   bool get _countsSelectedClientAsPassenger =>
       _isVenteCaissier && _selectedClient != null;
 
+  /// L'utilisateur connecté est-il lui-même un passager du billet ?
+  /// En mode « Autre(s) », il réserve uniquement pour d'autres personnes.
+  bool get _selfIsPassenger {
+    if (_isVenteCaissier) return false;
+    return _reservationMode != _ReservationMode.othersOnly;
+  }
+
   /// Si l’API refuse le rôle (403), on peut quand même proposer les catégories
   /// présentes sur le voyage (`tarifs`), avec les bons `idCategorieSiege`.
   List<CategorieSiege> _categoriesFromVoyageTarifs() {
@@ -525,14 +532,17 @@ class _ReservationFormScreenState extends State<ReservationFormScreen> {
       return sum;
     }
 
-    final idTit = _selfCategorieSiegeId;
-    if (idTit == null) {
-      if (widget.voyage.prix > 0) {
-        return widget.voyage.prix * _nombrePlaces;
+    var sum = 0.0;
+    if (_selfIsPassenger) {
+      final idTit = _selfCategorieSiegeId;
+      if (idTit == null) {
+        if (widget.voyage.prix > 0) {
+          return widget.voyage.prix * _nombrePlaces;
+        }
+        return 0;
       }
-      return 0;
+      sum += _prixPourCategorieSiege(idTit);
     }
-    var sum = _prixPourCategorieSiege(idTit);
     if (_showPassengersSection && !_isVenteCaissier) {
       for (final p in _passagersAjoutes) {
         sum += _prixPourCategorieSiege(p.idCategorieSiege);
@@ -549,8 +559,10 @@ class _ReservationFormScreenState extends State<ReservationFormScreen> {
     if (_countsSelectedClientAsPassenger) {
       return 1 + _passagersAjoutes.length;
     }
+    final selfCount = _selfIsPassenger ? 1 : 0;
     final extra = _showPassengersSection ? _passagersAjoutes.length : 0;
-    return 1 + extra;
+    final total = selfCount + extra;
+    return total < 1 ? 1 : total;
   }
 
   void _syncPlacesAndMontant() {
@@ -912,37 +924,39 @@ class _ReservationFormScreenState extends State<ReservationFormScreen> {
         );
       }
     } else {
-      if (_selfCategorieSiegeId == null) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Sélectionne une catégorie de siège pour le client connecté.',
+      if (_selfIsPassenger) {
+        if (_selfCategorieSiegeId == null) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Sélectionne une catégorie de siège pour le client connecté.',
+              ),
+              backgroundColor: Colors.red,
             ),
-            backgroundColor: Colors.red,
+          );
+          return;
+        }
+        final idCatTitulaire = _selfCategorieSiegeId!;
+        final emailTitulaireBrut = (userData['email'] ?? userData['user_email'])
+            ?.toString();
+        passagers.add(
+          ReservationPassengerData(
+            idClient: idClient,
+            idCategorieSiege: idCatTitulaire,
+            nomComplet: (userData['name'] ?? userData['user_name'] ?? '')
+                .toString()
+                .trim(),
+            telephone: (userData['phone'] ?? userData['telephone'] ?? '')
+                .toString()
+                .trim(),
+            email: _emailPourApi(emailTitulaireBrut),
+            documentType: '',
+            documentNumero: '',
+            genre: '',
           ),
         );
-        return;
       }
-      final idCatTitulaire = _selfCategorieSiegeId!;
-      final emailTitulaireBrut = (userData['email'] ?? userData['user_email'])
-          ?.toString();
-      passagers.add(
-        ReservationPassengerData(
-          idClient: idClient,
-          idCategorieSiege: idCatTitulaire,
-          nomComplet: (userData['name'] ?? userData['user_name'] ?? '')
-              .toString()
-              .trim(),
-          telephone: (userData['phone'] ?? userData['telephone'] ?? '')
-              .toString()
-              .trim(),
-          email: _emailPourApi(emailTitulaireBrut),
-          documentType: '',
-          documentNumero: '',
-          genre: '',
-        ),
-      );
 
       if (_showPassengersSection) {
         if (_passagersAjoutes.isEmpty) {
@@ -1128,7 +1142,9 @@ class _ReservationFormScreenState extends State<ReservationFormScreen> {
                     ? (_passagersAdditionnelsActifs
                           ? 'Client bénéficiaire + passagers additionnels.'
                           : 'Une place pour le client bénéficiaire.')
-                    : 'Mis à jour automatiquement (toi + passagers ajoutés).',
+                    : (_reservationMode == _ReservationMode.othersOnly
+                          ? 'Mis à jour automatiquement (passagers ajoutés).'
+                          : 'Mis à jour automatiquement (toi + passagers ajoutés).'),
                 style: TextStyle(
                   color: Colors.white.withValues(alpha: 0.45),
                   fontSize: 12,
@@ -1179,11 +1195,13 @@ class _ReservationFormScreenState extends State<ReservationFormScreen> {
                   ],
                 ),
                 const SizedBox(height: 8),
-                const Text(
-                  'Même pour une réservation pour autre(s), tes informations '
-                  'restent incluses comme titulaire.',
+                Text(
+                  _reservationMode == _ReservationMode.othersOnly
+                      ? 'Réservation pour d\'autres passagers uniquement : '
+                            'tu n\'es pas compté comme passager.'
+                      : 'Tes informations sont incluses comme passager du billet.',
                   textAlign: TextAlign.center,
-                  style: TextStyle(color: Colors.white54, fontSize: 12),
+                  style: const TextStyle(color: Colors.white54, fontSize: 12),
                 ),
               ],
               if (_isVenteCaissier && _selectedClient != null) ...[
@@ -1224,7 +1242,7 @@ class _ReservationFormScreenState extends State<ReservationFormScreen> {
                 ),
               ],
               const SizedBox(height: 16),
-              if (_isVenteCaissier)
+              if (_isVenteCaissier) ...[
                 DropdownButtonFormField<int>(
                   isExpanded: true,
                   initialValue: _clientPassagerCategorieSiegeId,
@@ -1240,8 +1258,19 @@ class _ReservationFormScreenState extends State<ReservationFormScreen> {
                           });
                         },
                   decoration: _inputDecoration('Catégorie de siège (client)'),
-                )
-              else
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(top: 6, left: 4, right: 4),
+                  child: Text(
+                    'Choisissez une catégorie avec des places libres sur ce voyage. '
+                    'Si la vente échoue (ex. VP complet), essayez une autre catégorie.',
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.45),
+                      fontSize: 11,
+                    ),
+                  ),
+                ),
+              ] else if (_selfIsPassenger) ...[
                 DropdownButtonFormField<int>(
                   isExpanded: true,
                   initialValue: _selfCategorieSiegeId,
@@ -1258,19 +1287,17 @@ class _ReservationFormScreenState extends State<ReservationFormScreen> {
                         },
                   decoration: _inputDecoration('Catégorie de siège (Vous)'),
                 ),
-              Padding(
-                padding: const EdgeInsets.only(top: 6, left: 4, right: 4),
-                child: Text(
-                  _isVenteCaissier
-                      ? 'Choisissez une catégorie avec des places libres sur ce voyage. '
-                            'Si la vente échoue (ex. VP complet), essayez une autre catégorie.'
-                      : 'Indépendante des catégories choisies pour les autres passagers.',
-                  style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.45),
-                    fontSize: 11,
+                Padding(
+                  padding: const EdgeInsets.only(top: 6, left: 4, right: 4),
+                  child: Text(
+                    'Indépendante des catégories choisies pour les autres passagers.',
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.45),
+                      fontSize: 11,
+                    ),
                   ),
                 ),
-              ),
+              ],
               const SizedBox(height: 12),
               _buildField(
                 controller: _montantPayeController,
