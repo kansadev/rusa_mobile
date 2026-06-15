@@ -44,6 +44,7 @@ class _AllVoyagesScreenState extends State<AllVoyagesScreen> {
   late VoyagePeriode _periode;
   Client? _selectedClient;
   bool _isCaissier = false;
+  int _idSociete = 0;
   List<Client> _clientsForPicker = [];
   String? _clientsLoadError;
   bool _loadingClients = false;
@@ -54,8 +55,12 @@ class _AllVoyagesScreenState extends State<AllVoyagesScreen> {
     _periode = widget.initialPeriode ?? VoyagePeriode.jour;
     _selectedClient = widget.client;
     _scrollController.addListener(_onScroll);
-    _loadRoleContext();
-    _loadVoyages(reset: true);
+    _initialize();
+  }
+
+  Future<void> _initialize() async {
+    await _loadRoleContext();
+    if (mounted) await _loadVoyages(reset: true);
   }
 
   Future<void> _loadRoleContext() async {
@@ -66,10 +71,52 @@ class _AllVoyagesScreenState extends State<AllVoyagesScreen> {
         ? role
         : (auth?.nomRole.toLowerCase().trim() ?? '');
     final isCaissier = roleName.contains('caiss');
-    setState(() => _isCaissier = isCaissier);
+    var idSociete = 0;
+    if (isCaissier) {
+      idSociete = await ApiService.getCurrentSocieteId();
+    }
+    setState(() {
+      _isCaissier = isCaissier;
+      _idSociete = idSociete;
+    });
     if (isCaissier) {
       await _ensureClientsLoaded();
     }
+  }
+
+  Future<VoyagePagedResponse?> _fetchVoyagesPage(int pageNumber) async {
+    final common = (
+      pageNumber: pageNumber,
+      pageSize: _pageSize,
+      periode: _periode.apiValue,
+      sortBy: 'dateDepart',
+      sortDescending: false,
+    );
+
+    if (_isCaissier) {
+      if (_idSociete <= 0) {
+        _idSociete = await ApiService.getCurrentSocieteId();
+        if (mounted) setState(() {});
+      }
+      if (_idSociete <= 0) return null;
+
+      return ApiService.getVoyagesBySocietePaged(
+        idSociete: _idSociete,
+        pageNumber: common.pageNumber,
+        pageSize: common.pageSize,
+        periode: common.periode,
+        sortBy: common.sortBy,
+        sortDescending: common.sortDescending,
+      );
+    }
+
+    return ApiService.getVoyagesPaged(
+      pageNumber: common.pageNumber,
+      pageSize: common.pageSize,
+      periode: common.periode,
+      sortBy: common.sortBy,
+      sortDescending: common.sortDescending,
+    );
   }
 
   Future<void> _ensureClientsLoaded({bool force = false}) async {
@@ -242,19 +289,15 @@ class _AllVoyagesScreenState extends State<AllVoyagesScreen> {
     }
 
     try {
-      final response = await ApiService.getVoyagesPaged(
-        pageNumber: 1,
-        pageSize: _pageSize,
-        periode: _periode.apiValue,
-        sortBy: 'dateDepart',
-        sortDescending: false,
-      );
+      final response = await _fetchVoyagesPage(1);
 
       if (!mounted) return;
 
       if (response == null) {
         setState(() {
-          _error = 'Impossible de charger les voyages.';
+          _error = _isCaissier
+              ? 'Impossible de charger les voyages de votre société.'
+              : 'Impossible de charger les voyages.';
           _isLoading = false;
           _hasNextPage = false;
         });
@@ -282,13 +325,7 @@ class _AllVoyagesScreenState extends State<AllVoyagesScreen> {
     setState(() => _loadingMore = true);
 
     try {
-      final response = await ApiService.getVoyagesPaged(
-        pageNumber: _nextPageNumber,
-        pageSize: _pageSize,
-        periode: _periode.apiValue,
-        sortBy: 'dateDepart',
-        sortDescending: false,
-      );
+      final response = await _fetchVoyagesPage(_nextPageNumber);
 
       if (!mounted) return;
 

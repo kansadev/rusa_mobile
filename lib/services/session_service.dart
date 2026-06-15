@@ -8,6 +8,7 @@ import 'package:rusa/services/api_service.dart';
 import 'package:rusa/models/auth_models.dart';
 import 'package:rusa/models/client_model.dart';
 import 'cache_service.dart';
+import 'password_change_service.dart';
 
 class SessionService {
   static final SessionService _instance = SessionService._internal();
@@ -130,6 +131,7 @@ class SessionService {
       await prefs.setString('user_name', authResponse.utilisateur.nomComplet);
       await prefs.setString('user_email', authResponse.utilisateur.email);
       await prefs.setString('user_phone', authResponse.utilisateur.telephone);
+      await PasswordChangeService.persistFromAuth(authResponse);
       debugPrint(
         'Données d\'authentification sauvegardées avec succès (client_id: $effectiveClientId)',
       );

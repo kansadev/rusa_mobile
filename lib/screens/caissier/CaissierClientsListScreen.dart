@@ -7,7 +7,9 @@ import 'package:rusa/services/api_service.dart';
 
 /// Liste des clients enregistrés (`/api/Client`) avec recherche locale.
 class CaissierClientsListScreen extends StatefulWidget {
-  const CaissierClientsListScreen({super.key});
+  final bool showBack;
+
+  const CaissierClientsListScreen({super.key, this.showBack = true});
 
   @override
   State<CaissierClientsListScreen> createState() =>
@@ -102,13 +104,16 @@ class _CaissierClientsListScreenState extends State<CaissierClientsListScreen> {
     return Scaffold(
       backgroundColor: _bg,
       appBar: AppBar(
-        leading: IconButton(
-          onPressed: () => Navigator.pop(context),
-          icon: const Icon(
-            Icons.arrow_back_ios_new_rounded,
-            color: Colors.white,
-          ),
-        ),
+        automaticallyImplyLeading: widget.showBack,
+        leading: widget.showBack
+            ? IconButton(
+                onPressed: () => Navigator.pop(context),
+                icon: const Icon(
+                  Icons.arrow_back_ios_new_rounded,
+                  color: Colors.white,
+                ),
+              )
+            : null,
         backgroundColor: _bg,
         foregroundColor: Colors.white,
         elevation: 0,

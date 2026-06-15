@@ -180,7 +180,7 @@ class _BusDetailsScreenState extends State<BusDetailsScreen> {
               width: 80,
               height: 80,
               decoration: BoxDecoration(
-                color: Colors.red.withOpacity(0.2),
+                color: Colors.red.withValues(alpha: 0.2),
                 borderRadius: BorderRadius.circular(40),
               ),
               child: const Icon(
@@ -337,7 +337,7 @@ class _BusDetailsScreenState extends State<BusDetailsScreen> {
           decoration: BoxDecoration(
             color: const Color(0xFF222222),
             borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: Colors.white.withOpacity(0.1)),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
           ),
           child: Column(children: children),
         ),
@@ -359,7 +359,7 @@ class _BusDetailsScreenState extends State<BusDetailsScreen> {
             width: 40,
             height: 40,
             decoration: BoxDecoration(
-              color: color.withOpacity(0.2),
+              color: color.withValues(alpha: 0.2),
               borderRadius: BorderRadius.circular(10),
             ),
             child: Icon(icon, color: color, size: 20),

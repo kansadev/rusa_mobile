@@ -9,12 +9,11 @@ import 'package:image/image.dart' as img;
 import 'package:path_provider/path_provider.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
-import 'package:permission_handler/permission_handler.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:rusa/models/billet_check_response.dart';
 import 'package:rusa/models/reservation_with_paiement_response.dart';
 import 'package:rusa/services/api_service.dart';
-import 'package:saver_gallery/saver_gallery.dart';
+import 'package:share_plus/share_plus.dart';
 
 import 'BilletReaffectationScreen.dart';
 
@@ -133,7 +132,9 @@ class _TicketReceiptScreenState extends State<TicketReceiptScreen> {
     }
   }
 
-  Future<void> _saveAsJpg() async {
+  /// Partage le billet en image (menu système : WhatsApp, Galerie, Drive…).
+  /// Aucune permission READ_MEDIA / galerie requise.
+  Future<void> _shareAsImage() async {
     if (_isSaving) return;
     setState(() => _isSaving = true);
     try {
@@ -143,46 +144,36 @@ class _TicketReceiptScreenState extends State<TicketReceiptScreen> {
       if (decoded == null || !mounted) return;
       final jpgBytes = Uint8List.fromList(img.encodeJpg(decoded, quality: 92));
 
-      final hasPermission = await _requestGalleryPermission();
-      if (!hasPermission) {
-        if (!mounted) return;
-        _showSnack(
-          'Permission galerie refusée. Autorisez l\'accès aux photos.',
-          isError: true,
-        );
-        return;
-      }
-
-      final imageName = 'ticket_${DateTime.now().millisecondsSinceEpoch}.jpg';
-      final result = await SaverGallery.saveImage(
-        jpgBytes,
-        quality: 92,
-        fileName: imageName,
-        androidRelativePath: 'Pictures/RusaTravel',
-        skipIfExists: false,
-      );
+      final tempDir = await getTemporaryDirectory();
+      final fileName = 'billet_rusa_${DateTime.now().millisecondsSinceEpoch}.jpg';
+      final file = File('${tempDir.path}${Platform.pathSeparator}$fileName');
+      await file.writeAsBytes(jpgBytes, flush: true);
 
       if (!mounted) return;
-      if (result.isSuccess) {
-        _showSnack('Image enregistrée dans la galerie.');
-      } else {
-        _showSnack(
-          result.errorMessage?.trim().isNotEmpty == true
-              ? result.errorMessage!
-              : 'Échec de l\'enregistrement dans la galerie.',
-          isError: true,
-        );
-      }
+      final box = context.findRenderObject() as RenderBox?;
+      final origin = box != null
+          ? box.localToGlobal(Offset.zero) & box.size
+          : null;
+
+      await SharePlus.instance.share(
+        ShareParams(
+          files: [XFile(file.path, mimeType: 'image/jpeg', name: fileName)],
+          text: 'Mon billet Rusa Travel',
+          subject: 'Billet Rusa Travel',
+          sharePositionOrigin: origin,
+        ),
+      );
     } catch (e) {
       if (mounted) {
-        _showSnack('Erreur lors de l\'export image.', isError: true);
+        _showSnack('Erreur lors du partage de l\'image.', isError: true);
       }
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }
   }
 
-  Future<void> _saveAsPdf() async {
+  /// Partage le billet en PDF via le menu système (sans permission stockage).
+  Future<void> _shareAsPdf() async {
     if (_isSaving) return;
     setState(() => _isSaving = true);
     try {
@@ -199,34 +190,32 @@ class _TicketReceiptScreenState extends State<TicketReceiptScreen> {
         ),
       );
 
-      final dir = await getApplicationDocumentsDirectory();
-      final file = File(
-        '${dir.path}${Platform.pathSeparator}ticket_${DateTime.now().millisecondsSinceEpoch}.pdf',
-      );
+      final tempDir = await getTemporaryDirectory();
+      final fileName = 'billet_rusa_${DateTime.now().millisecondsSinceEpoch}.pdf';
+      final file = File('${tempDir.path}${Platform.pathSeparator}$fileName');
       await file.writeAsBytes(await pdf.save(), flush: true);
+
       if (!mounted) return;
-      _showSnack('Ticket enregistré dans le dossier documents de l\'appareil.');
+      final box = context.findRenderObject() as RenderBox?;
+      final origin = box != null
+          ? box.localToGlobal(Offset.zero) & box.size
+          : null;
+
+      await SharePlus.instance.share(
+        ShareParams(
+          files: [XFile(file.path, mimeType: 'application/pdf', name: fileName)],
+          text: 'Mon billet Rusa Travel',
+          subject: 'Billet Rusa Travel',
+          sharePositionOrigin: origin,
+        ),
+      );
     } catch (e) {
       if (mounted) {
-        _showSnack('Erreur lors de l\'export du ticket.', isError: true);
+        _showSnack('Erreur lors du partage du PDF.', isError: true);
       }
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }
-  }
-
-  Future<bool> _requestGalleryPermission() async {
-    if (Platform.isIOS) {
-      final status = await Permission.photos.request();
-      return status.isGranted || status.isLimited;
-    }
-
-    // Android (selon version, photos ou storage peut être requis)
-    final photosStatus = await Permission.photos.request();
-    if (photosStatus.isGranted || photosStatus.isLimited) return true;
-
-    final storageStatus = await Permission.storage.request();
-    return storageStatus.isGranted;
   }
 
   void _showSnack(String message, {bool isError = false}) {
@@ -561,9 +550,9 @@ class _TicketReceiptScreenState extends State<TicketReceiptScreen> {
             color: const Color(0xFF1E1E1E),
             onSelected: (value) {
               if (value == 'pdf') {
-                _saveAsPdf();
-              } else if (value == 'jpg') {
-                _saveAsJpg();
+                _shareAsPdf();
+              } else if (value == 'image') {
+                _shareAsImage();
               } else if (value == 'report') {
                 _reporterBillet();
               }
@@ -578,17 +567,17 @@ class _TicketReceiptScreenState extends State<TicketReceiptScreen> {
                       color: Color(0xFF00E676),
                     ),
                     SizedBox(width: 10),
-                    Text('Télécharger en PDF'),
+                    Text('Partager en PDF'),
                   ],
                 ),
               ),
               const PopupMenuItem<String>(
-                value: 'jpg',
+                value: 'image',
                 child: Row(
                   children: [
-                    Icon(Icons.image_outlined, color: Color(0xFF00E676)),
+                    Icon(Icons.share_outlined, color: Color(0xFF00E676)),
                     SizedBox(width: 10),
-                    Text('Télécharger en JPG'),
+                    Text('Partager en image'),
                   ],
                 ),
               ),

@@ -10,6 +10,7 @@ import 'package:rusa/models/reservation_with_paiement_request.dart';
 import 'package:rusa/services/api_service.dart';
 import 'package:rusa/services/cache_service.dart';
 import 'package:rusa/services/session_service.dart';
+import 'package:rusa/screens/caissier/CaissierTicketReceiptScreen.dart';
 import 'package:rusa/screens/client/TicketReceiptScreen.dart';
 import 'package:rusa/screens/client/BusDetailsScreen.dart';
 import 'package:rusa/screens/client/ReservationFormScreen.dart';
@@ -463,9 +464,9 @@ class _SeatSelectionScreenState extends State<SeatSelectionScreen> {
           width: double.infinity,
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.1),
+            color: Colors.white.withValues(alpha: 0.1),
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.white.withOpacity(0.2)),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -474,7 +475,7 @@ class _SeatSelectionScreenState extends State<SeatSelectionScreen> {
                 Text(
                   'Tarifs par classe',
                   style: TextStyle(
-                    color: Colors.white.withOpacity(0.7),
+                    color: Colors.white.withValues(alpha: 0.7),
                     fontSize: 12,
                     fontWeight: FontWeight.w500,
                   ),
@@ -514,7 +515,7 @@ class _SeatSelectionScreenState extends State<SeatSelectionScreen> {
                   Text(
                     'Indication (${widget.voyage.codeDevisePrincipale}): ${widget.voyage.prixDevisePrincipale!.toStringAsFixed(0)}',
                     style: TextStyle(
-                      color: Colors.white.withOpacity(0.55),
+                      color: Colors.white.withValues(alpha: 0.55),
                       fontSize: 11,
                     ),
                   ),
@@ -523,7 +524,7 @@ class _SeatSelectionScreenState extends State<SeatSelectionScreen> {
                 Text(
                   'Prix du billet',
                   style: TextStyle(
-                    color: Colors.white.withOpacity(0.7),
+                    color: Colors.white.withValues(alpha: 0.7),
                     fontSize: 12,
                     fontWeight: FontWeight.w500,
                   ),
@@ -1084,12 +1085,17 @@ class _SeatSelectionScreenState extends State<SeatSelectionScreen> {
         Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (context) => TicketReceiptScreen(
-              reservationData: response.reservation,
-              paiementData: response.paiement,
-              billetData: response.billet,
-              billets: response.billets,
-            ),
+            builder: (context) => _isVenteCaissier
+                ? CaissierTicketReceiptScreen(
+                    idReservation: response.reservation.idReservation,
+                    paiementHint: response.paiement,
+                  )
+                : TicketReceiptScreen(
+                    reservationData: response.reservation,
+                    paiementData: response.paiement,
+                    billetData: response.billet,
+                    billets: response.billets,
+                  ),
           ),
         );
       } else {

@@ -5,15 +5,23 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:image/image.dart' as img;
 import 'package:image_picker/image_picker.dart';
+import 'package:rusa/models/auth_models.dart';
 import 'package:rusa/models/utilisateur_profile_update.dart';
 import 'package:rusa/services/api_service.dart';
+import 'package:rusa/widgets/app_feedback.dart';
+import 'package:rusa/widgets/app_message.dart';
 
 /// Écran d'édition des informations de l'utilisateur connecté.
 /// Met à jour via `PUT /api/Utilisateur/{id}` (photo encodée en base64).
 class EditProfileScreen extends StatefulWidget {
   final int idUtilisateur;
+  final Utilisateur? initialUser;
 
-  const EditProfileScreen({super.key, required this.idUtilisateur});
+  const EditProfileScreen({
+    super.key,
+    required this.idUtilisateur,
+    this.initialUser,
+  });
 
   @override
   State<EditProfileScreen> createState() => _EditProfileScreenState();
@@ -37,11 +45,19 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
   bool _isLoading = true;
   bool _isSaving = false;
+  AppMessageType? _messageType;
+  String? _message;
 
   @override
   void initState() {
     super.initState();
-    _loadUser();
+    if (widget.initialUser != null) {
+      _applyUser(widget.initialUser!);
+      _isLoading = false;
+      _loadUser(silent: true);
+    } else {
+      _loadUser();
+    }
   }
 
   @override
@@ -53,36 +69,58 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     super.dispose();
   }
 
-  Future<void> _loadUser() async {
+  Future<void> _loadUser({bool silent = false}) async {
+    if (!silent) {
+      setState(() => _isLoading = true);
+    }
     final u = await ApiService.getUtilisateurById(widget.idUtilisateur);
     if (!mounted) return;
     if (u != null) {
-      _nomController.text = u.nomComplet;
-      _emailController.text = u.email;
-      _telephoneController.text = u.telephone;
-      _lieuNaissanceController.text = u.lieuNaissance ?? '';
-      _genre = _normalizeGenre(u.genre);
-      _dateNaissance = _parseDate(u.dateNaissance);
-      final photo = u.photoUrl?.trim() ?? '';
-      if (photo.isNotEmpty &&
-          !photo.startsWith('http://') &&
-          !photo.startsWith('https://')) {
-        try {
-          final cleaned = photo.contains('base64,')
-              ? photo.split('base64,').last
-              : photo;
-          _photoBase64 = cleaned;
-          _photoPreview = base64Decode(cleaned);
-        } catch (_) {}
-      }
+      _applyUser(u);
     }
     setState(() => _isLoading = false);
   }
 
+  void _applyUser(Utilisateur u) {
+    _nomController.text = u.nomComplet;
+    _emailController.text = u.email;
+    _telephoneController.text = u.telephone;
+    _lieuNaissanceController.text = u.lieuNaissance ?? '';
+    _genre = _normalizeGenre(u.genre);
+    _dateNaissance = _parseDate(u.dateNaissance);
+    final photo = u.photoUrl?.trim() ?? '';
+    if (photo.isNotEmpty &&
+        !photo.startsWith('http://') &&
+        !photo.startsWith('https://')) {
+      try {
+        final cleaned = photo.contains('base64,')
+            ? photo.split('base64,').last
+            : photo;
+        _photoBase64 = cleaned;
+        _photoPreview = base64Decode(cleaned);
+      } catch (_) {}
+    }
+  }
+
+  void _showInlineMessage(String message, AppMessageType type) {
+    setState(() {
+      _message = message;
+      _messageType = type;
+    });
+  }
+
+  void _clearInlineMessage() {
+    if (_message == null) return;
+    setState(() {
+      _message = null;
+      _messageType = null;
+    });
+  }
+
   String _normalizeGenre(String? raw) {
     final g = (raw ?? '').trim().toLowerCase();
-    if (g.startsWith('h') || g == 'm' || g.startsWith('mascul')) return 'Homme';
-    if (g.startsWith('f')) return 'Femme';
+    if (g == 'm' || g.startsWith('h') || g.startsWith('mascul')) return 'Homme';
+    if (g == 'f' || g.startsWith('fem')) return 'Femme';
     return 'Autre';
   }
 
@@ -159,11 +197,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       });
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Impossible de charger l\'image : $e'),
-          backgroundColor: Colors.redAccent,
-        ),
+      _showInlineMessage(
+        'Impossible de charger l\'image : $e',
+        AppMessageType.error,
       );
     }
   }
@@ -172,15 +208,14 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     if (_isSaving) return;
     if (_nomController.text.trim().isEmpty ||
         _telephoneController.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Le nom complet et le téléphone sont obligatoires.'),
-          backgroundColor: Colors.redAccent,
-        ),
+      _showInlineMessage(
+        'Le nom complet et le téléphone sont obligatoires.',
+        AppMessageType.warning,
       );
       return;
     }
 
+    _clearInlineMessage();
     setState(() => _isSaving = true);
     final payload = UtilisateurProfileUpdate(
       idUtilisateur: widget.idUtilisateur,
@@ -203,19 +238,11 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     setState(() => _isSaving = false);
 
     if (result.ok) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Profil mis à jour avec succès.'),
-          backgroundColor: _accent,
-        ),
-      );
       Navigator.pop(context, true);
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(result.errorMessage ?? 'Échec de la mise à jour.'),
-          backgroundColor: Colors.redAccent,
-        ),
+      _showInlineMessage(
+        AppFeedback.normalizeMessage(result.errorMessage, httpStatus: 400),
+        AppMessageType.error,
       );
     }
   }
@@ -247,6 +274,13 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
+                    if (_message != null && _messageType != null) ...[
+                      AppMessage(
+                        type: _messageType!,
+                        message: _message!,
+                      ),
+                      const SizedBox(height: 16),
+                    ],
                     Center(child: _buildPhotoPicker()),
                     const SizedBox(height: 24),
                     _buildField(

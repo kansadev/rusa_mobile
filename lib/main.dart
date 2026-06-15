@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -13,6 +14,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  _configureProductionErrorHandling();
 
   // Initialiser Hive avec hive_flutter
   await Hive.initFlutter();
@@ -27,6 +29,29 @@ void main() async {
   await CacheService.debugPrintCacheStatus();
 
   runApp(const RusaTravelApp());
+}
+
+/// Réduit le bruit des avertissements Flutter connus en production.
+void _configureProductionErrorHandling() {
+  if (!kReleaseMode) return;
+
+  final defaultOnError = FlutterError.onError;
+  FlutterError.onError = (details) {
+    final text = '${details.exceptionAsString()}\n${details.summary}';
+    if (_isBenignFrameworkNoise(text)) return;
+    if (defaultOnError != null) {
+      defaultOnError(details);
+    } else {
+      FlutterError.presentError(details);
+    }
+  };
+}
+
+bool _isBenignFrameworkNoise(String message) {
+  return message.contains(
+        'ListTile background color or ink splashes may be invisible',
+      ) ||
+      message.contains('overflowed by');
 }
 
 class RusaTravelApp extends StatelessWidget {
@@ -46,6 +71,12 @@ class RusaTravelApp extends StatelessWidget {
           surface: Color(0xFF222222), // Couleur des cartes
         ),
         // Application de la police style pinceau sur les titres
+        listTileTheme: const ListTileThemeData(
+          tileColor: Color(0xFF252525),
+          selectedTileColor: Color(0xFF2C2C2C),
+          iconColor: Colors.white70,
+          textColor: Colors.white,
+        ),
         textTheme: TextTheme(
           displayLarge: GoogleFonts.caveat(
             fontSize: 48,

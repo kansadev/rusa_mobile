@@ -123,6 +123,16 @@ class CacheService {
     }
   }
 
+  static AuthResponse? getAuthResponseSync() {
+    try {
+      if (!Hive.isBoxOpen(_authResponseBox)) return null;
+      return Hive.box<AuthResponse>(_authResponseBox).get('auth');
+    } catch (e) {
+      debugPrint('HIVE ERREUR getAuthResponseSync: $e');
+      return null;
+    }
+  }
+
   static Future<void> saveAuthResponse(AuthResponse authResponse) async {
     try {
       final box = await Hive.openBox<AuthResponse>(_authResponseBox);

@@ -3,11 +3,13 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:rusa/models/auth_models.dart';
-import 'package:rusa/screens/ProfileImageViewScreen.dart';
 import 'package:rusa/screens/auth/LoginScreen.dart';
+import 'package:rusa/screens/client/EditProfileScreen.dart';
+import 'package:rusa/services/api_service.dart';
 import 'package:rusa/services/cache_service.dart';
 import 'package:rusa/services/session_service.dart';
-
+import 'package:rusa/widgets/app_feedback.dart';
+import 'package:rusa/widgets/password_change_reminder.dart';
 /// Profil caissier / agent : même structure que [ProfileScreen], données issues de [AuthResponse].
 class CaissierProfileScreen extends StatefulWidget {
   const CaissierProfileScreen({super.key});
@@ -18,7 +20,6 @@ class CaissierProfileScreen extends StatefulWidget {
 
 class _CaissierProfileScreenState extends State<CaissierProfileScreen> {
   AuthResponse? _auth;
-  bool _isLoading = true;
 
   bool _pauseNotifications = true;
   bool _darkMode = false;
@@ -67,16 +68,55 @@ class _CaissierProfileScreenState extends State<CaissierProfileScreen> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _loadAuth());
+    _auth = CacheService.getAuthResponseSync();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _refreshAuth());
   }
 
-  Future<void> _loadAuth() async {
+  Future<void> _refreshAuth() async {
     final auth = await CacheService.getAuthResponse();
     if (!mounted) return;
-    setState(() {
-      _auth = auth;
-      _isLoading = false;
-    });
+    if (auth != null) {
+      setState(() => _auth = auth);
+    }
+  }
+
+  Future<void> _refreshAuthAfterEdit(int id) async {
+    try {
+      final cachedAuth = await CacheService.getAuthResponse();
+      final freshUser = await ApiService.getUtilisateurById(id);
+      if (cachedAuth != null && freshUser != null) {
+        final map = cachedAuth.toJson();
+        map['utilisateur'] = freshUser.toJson();
+        final updated = AuthResponse.fromJson(map);
+        await CacheService.saveAuthResponse(updated);
+        if (mounted) setState(() => _auth = updated);
+        return;
+      }
+    } catch (_) {}
+    await _refreshAuth();
+  }
+
+  Future<void> _openEditProfile() async {
+    final id = _auth?.utilisateur.idUtilisateur ?? 0;
+    if (id <= 0) {
+      AppFeedback.showError(context, 'Utilisateur introuvable.');
+      return;
+    }
+
+    final updated = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => EditProfileScreen(
+          idUtilisateur: id,
+          initialUser: _auth?.utilisateur,
+        ),
+      ),
+    );
+
+    if (updated == true && mounted) {
+      await _refreshAuthAfterEdit(id);
+      AppFeedback.showSuccess(context, 'Profil mis à jour avec succès.');
+    }
   }
 
   Future<void> _logout() async {
@@ -134,21 +174,6 @@ class _CaissierProfileScreenState extends State<CaissierProfileScreen> {
     }
   }
 
-  void _openPhotoPreview(AuthResponse auth) {
-    final url = _effectivePhotoUrl(auth);
-    if (url == null || url.trim().isEmpty) return;
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => ProfileImageViewScreen(
-          imagePath: 'assets/images/profil.jpg',
-          imageUrl: url,
-          userName: _displayName(auth),
-        ),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     const backgroundColor = Color(0xFF0D0D0D);
@@ -173,165 +198,146 @@ class _CaissierProfileScreenState extends State<CaissierProfileScreen> {
           ),
         ),
       ),
-      body: _isLoading
-          ? const Center(
-              child: CircularProgressIndicator(color: Color(0xFF00E676)),
-            )
-          : _auth == null
-          ? Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(Icons.person_off, color: Colors.white38, size: 48),
-                    const SizedBox(height: 16),
-                    Text(
-                      'Session introuvable.',
-                      style: TextStyle(color: Colors.white.withValues(alpha: 0.7)),
-                    ),
-                    const SizedBox(height: 16),
-                    FilledButton(
-                      onPressed: () {
-                        setState(() => _isLoading = true);
-                        _loadAuth();
-                      },
-                      child: const Text('Réessayer'),
-                    ),
-                  ],
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+        child: Column(
+          children: [
+            const PasswordChangeReminder(
+              margin: EdgeInsets.only(bottom: 16),
+            ),
+            _buildCard(cardColor, [
+              ListTile(
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 8,
+                ),
+                leading: CircleAvatar(
+                  radius: 24,
+                  backgroundColor: const Color(0xFF00E676),
+                  backgroundImage: _auth != null
+                      ? _buildProfileImageProvider(
+                          _effectivePhotoUrl(_auth!),
+                        )
+                      : null,
+                  child:
+                      _auth == null ||
+                          _buildProfileImageProvider(
+                                _effectivePhotoUrl(_auth!),
+                              ) ==
+                              null
+                      ? const Icon(
+                          Icons.person,
+                          color: Colors.black,
+                          size: 28,
+                        )
+                      : null,
+                ),
+                title: Text(
+                  _auth != null ? _displayName(_auth!) : 'Utilisateur',
+                  style: const TextStyle(
+                    color: textColor,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
+                ),
+                subtitle: Text(
+                  _auth == null
+                      ? 'Chargement du profil…'
+                      : (_displayEmail(_auth!).isEmpty
+                            ? _auth!.nomRole
+                            : _displayEmail(_auth!)),
+                  style: const TextStyle(
+                    color: subtitleColor,
+                    fontSize: 13,
+                  ),
+                ),
+                trailing: const Icon(
+                  Icons.chevron_right,
+                  color: subtitleColor,
+                ),
+                onTap: _openEditProfile,
+              ),
+            ]),
+            if (_auth != null) ...[
+              const SizedBox(height: 16),
+              _buildCard(cardColor, _buildAgentInfoTiles(_auth!, subtitleColor)),
+            ],
+            const SizedBox(height: 16),
+            _buildCard(cardColor, [
+              _buildSwitchTile(
+                icon: Icons.notifications_off_outlined,
+                title: 'Pause notifications',
+                value: _pauseNotifications,
+                activeColor: accentGreen,
+                onChanged: (val) => setState(() => _pauseNotifications = val),
+              ),
+              _buildActionTile(
+                icon: Icons.tune,
+                title: 'Paramètres généraux',
+                onTap: () {},
+              ),
+            ]),
+            const SizedBox(height: 16),
+            _buildCard(cardColor, [
+              _buildSwitchTile(
+                icon: Icons.dark_mode_outlined,
+                title: 'Mode sombre',
+                value: _darkMode,
+                activeColor: accentGreen,
+                onChanged: (val) => setState(() => _darkMode = val),
+              ),
+              _buildActionTile(
+                icon: Icons.translate,
+                title: 'Langue',
+                onTap: () {},
+              ),
+            ]),
+            const SizedBox(height: 16),
+            _buildCard(cardColor, [
+              _buildActionTile(
+                icon: Icons.help_outline,
+                title: 'FAQ',
+                onTap: () {},
+              ),
+              _buildActionTile(
+                icon: Icons.info_outline,
+                title: 'Conditions d\'utilisation',
+                onTap: () {},
+              ),
+              _buildActionTile(
+                icon: Icons.person_outline,
+                title: 'Politique utilisateur',
+                onTap: () {},
+              ),
+            ]),
+            const SizedBox(height: 30),
+            SizedBox(
+              width: double.infinity,
+              height: 55,
+              child: ElevatedButton.icon(
+                onPressed: _logout,
+                icon: const Icon(Icons.logout, color: Colors.redAccent),
+                label: const Text(
+                  'Se déconnecter',
+                  style: TextStyle(
+                    color: Colors.redAccent,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.white,
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(30),
+                  ),
                 ),
               ),
-            )
-          : SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-              child: Column(
-                children: [
-                  _buildCard(cardColor, [
-                    ListTile(
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 8,
-                      ),
-                      leading: CircleAvatar(
-                        radius: 24,
-                        backgroundColor: const Color(0xFF00E676),
-                        backgroundImage: _buildProfileImageProvider(
-                          _effectivePhotoUrl(_auth!),
-                        ),
-                        child: _buildProfileImageProvider(
-                                  _effectivePhotoUrl(_auth!),
-                                ) ==
-                                null
-                            ? const Icon(
-                                Icons.person,
-                                color: Colors.black,
-                                size: 28,
-                              )
-                            : null,
-                      ),
-                      title: Text(
-                        _displayName(_auth!),
-                        style: const TextStyle(
-                          color: textColor,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 16,
-                        ),
-                      ),
-                      subtitle: Text(
-                        _displayEmail(_auth!).isEmpty
-                            ? _auth!.nomRole
-                            : _displayEmail(_auth!),
-                        style: const TextStyle(
-                          color: subtitleColor,
-                          fontSize: 13,
-                        ),
-                      ),
-                      trailing: const Icon(
-                        Icons.chevron_right,
-                        color: subtitleColor,
-                      ),
-                      onTap: () => _openPhotoPreview(_auth!),
-                    ),
-                  ]),
-                  const SizedBox(height: 16),
-                  _buildCard(cardColor, _buildAgentInfoTiles(_auth!, subtitleColor)),
-                  const SizedBox(height: 16),
-                  _buildCard(cardColor, [
-                    _buildSwitchTile(
-                      icon: Icons.notifications_off_outlined,
-                      title: 'Pause notifications',
-                      value: _pauseNotifications,
-                      activeColor: accentGreen,
-                      onChanged: (val) =>
-                          setState(() => _pauseNotifications = val),
-                    ),
-                    _buildActionTile(
-                      icon: Icons.tune,
-                      title: 'Paramètres généraux',
-                      onTap: () {},
-                    ),
-                  ]),
-                  const SizedBox(height: 16),
-                  _buildCard(cardColor, [
-                    _buildSwitchTile(
-                      icon: Icons.dark_mode_outlined,
-                      title: 'Mode sombre',
-                      value: _darkMode,
-                      activeColor: accentGreen,
-                      onChanged: (val) => setState(() => _darkMode = val),
-                    ),
-                    _buildActionTile(
-                      icon: Icons.translate,
-                      title: 'Langue',
-                      onTap: () {},
-                    ),
-                  ]),
-                  const SizedBox(height: 16),
-                  _buildCard(cardColor, [
-                    _buildActionTile(
-                      icon: Icons.help_outline,
-                      title: 'FAQ',
-                      onTap: () {},
-                    ),
-                    _buildActionTile(
-                      icon: Icons.info_outline,
-                      title: 'Conditions d\'utilisation',
-                      onTap: () {},
-                    ),
-                    _buildActionTile(
-                      icon: Icons.person_outline,
-                      title: 'Politique utilisateur',
-                      onTap: () {},
-                    ),
-                  ]),
-                  const SizedBox(height: 30),
-                  SizedBox(
-                    width: double.infinity,
-                    height: 55,
-                    child: ElevatedButton.icon(
-                      onPressed: _logout,
-                      icon: const Icon(Icons.logout, color: Colors.redAccent),
-                      label: const Text(
-                        'Se déconnecter',
-                        style: TextStyle(
-                          color: Colors.redAccent,
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.white,
-                        elevation: 0,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(30),
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                ],
-              ),
             ),
+            const SizedBox(height: 20),
+          ],
+        ),
+      ),
     );
   }
 

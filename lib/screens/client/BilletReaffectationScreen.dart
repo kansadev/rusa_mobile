@@ -349,7 +349,7 @@ class _BilletReaffectationScreenState extends State<BilletReaffectationScreen> {
     return ListView.separated(
       padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
       itemCount: _voyages.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 10),
+      separatorBuilder: (_, _) => const SizedBox(height: 10),
       itemBuilder: (context, index) {
         final v = _voyages[index];
         final selected = v.id == _selectedVoyageId;
@@ -522,7 +522,7 @@ class _BilletReaffectationScreenState extends State<BilletReaffectationScreen> {
           SwitchListTile(
             contentPadding: EdgeInsets.zero,
             dense: true,
-            activeColor: _accent,
+            activeThumbColor: _accent,
             value: _confirmerPaiementDifferentiel,
             onChanged: (v) =>
                 setState(() => _confirmerPaiementDifferentiel = v),

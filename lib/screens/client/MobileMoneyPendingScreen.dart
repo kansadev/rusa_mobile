@@ -8,6 +8,9 @@ import 'package:rusa/services/api_service.dart';
 import 'package:rusa/services/flexpay_payment_tracker.dart';
 
 import 'CardPaymentWebViewScreen.dart';
+import 'package:rusa/screens/caissier/CaissierTicketReceiptScreen.dart';
+import 'package:rusa/widgets/app_message.dart';
+
 import 'TicketReceiptScreen.dart';
 
 class MobileMoneyPendingScreen extends StatefulWidget {
@@ -103,7 +106,9 @@ class _MobileMoneyPendingScreenState extends State<MobileMoneyPendingScreen> {
       }
       setState(() {
         _isLoading = false;
-        _error = result.errorMessage ?? 'Échec du paiement Mobile Money.';
+        _error = (result.errorMessage?.trim().isNotEmpty ?? false)
+            ? result.errorMessage!.trim()
+            : 'Échec du paiement Mobile Money.';
       });
       return;
     }
@@ -161,11 +166,25 @@ class _MobileMoneyPendingScreenState extends State<MobileMoneyPendingScreen> {
       resolved = verify.reservation;
     }
 
-    // Dès qu'on a l'idReservation, on récupère directement les billets (QR)
-    // via GET /api/Billet/reservation/{id}, sans dépendre du contenu du
-    // verifier. On fusionne avec la réservation riche (villes, heure, prix)
-    // si elle est disponible.
     final idReservation = resolved?.reservation.idReservation ?? 0;
+
+    // Caissier : le reçu charge les billets via GET /Billet/reservation/{id}.
+    if (widget.isVenteCaissier && idReservation > 0) {
+      if (!mounted) return;
+      setState(() => _isTrackingPayment = false);
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (context) => CaissierTicketReceiptScreen(
+            idReservation: idReservation,
+            paiementHint: resolved?.paiement,
+          ),
+        ),
+      );
+      return;
+    }
+
+    // Client : enrichir avec les billets avant l'écran reçu classique.
     if (idReservation > 0) {
       final billetResp = await ApiService.getBilletByReservation(idReservation);
       if (billetResp != null &&
@@ -243,6 +262,30 @@ class _MobileMoneyPendingScreenState extends State<MobileMoneyPendingScreen> {
   void _goToReceipt() {
     final response = _response;
     if (response is! ReservationWithPaiementResponse) return;
+
+    if (widget.isVenteCaissier) {
+      final idRes = response.reservation.idReservation;
+      if (idRes <= 0) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Réservation introuvable pour le reçu.'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+        return;
+      }
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (context) => CaissierTicketReceiptScreen(
+            idReservation: idRes,
+            paiementHint: response.paiement,
+          ),
+        ),
+      );
+      return;
+    }
+
     Navigator.pushReplacement(
       context,
       MaterialPageRoute(
@@ -432,21 +475,11 @@ class _MobileMoneyPendingScreenState extends State<MobileMoneyPendingScreen> {
                   ],
                 )
               : _error != null
-              ? Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(
-                      Icons.error_outline,
-                      color: Colors.redAccent,
-                      size: 52,
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      _error!,
-                      textAlign: TextAlign.center,
-                      style: GoogleFonts.poppins(color: Colors.white70),
-                    ),
-                    const SizedBox(height: 16),
+              ? AppMessageState(
+                  type: AppMessageType.error,
+                  title: 'Paiement impossible',
+                  message: _error!,
+                  actions: [
                     FilledButton(
                       onPressed: _submit,
                       style: FilledButton.styleFrom(
@@ -466,26 +499,12 @@ class _MobileMoneyPendingScreenState extends State<MobileMoneyPendingScreen> {
                   ],
                 )
               : _response != null
-              ? Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(
-                      Icons.check_circle,
-                      color: Color(0xFF00E676),
-                      size: 52,
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      widget.isVenteCaissier
-                          ? 'Vente enregistrée avec succès.'
-                          : 'Paiement confirmé.',
-                      textAlign: TextAlign.center,
-                      style: GoogleFonts.poppins(
-                        color: Colors.white,
-                        fontSize: 16,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
+              ? AppMessageState(
+                  type: AppMessageType.success,
+                  message: widget.isVenteCaissier
+                      ? 'Vente enregistrée avec succès.'
+                      : 'Paiement confirmé.',
+                  actions: [
                     FilledButton(
                       onPressed: _goToReceipt,
                       style: FilledButton.styleFrom(

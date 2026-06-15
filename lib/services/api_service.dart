@@ -2,6 +2,9 @@ import 'dart:convert';
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
+import 'package:rusa/services/app_logger.dart';
+import 'api_message_catalog.dart';
+import 'password_change_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
 import '../models/client_model.dart';
@@ -33,13 +36,14 @@ class ApiService {
   // Pour le staging:
   static const String _stagingBaseUrl =
       'https://uat-rusatravel.asdc-rdc.org/api';
-  static const String _productionBaseUrl = 'https://api.rusatravel.cd/api';
+  static const String _productionBaseUrl =
+      'https://prod-rusatravel.asdc-rdc.org/api';
   static const ApiEnvironment _defaultEnvironment = ApiEnvironment.dev;
   static String? _lastAuthErrorMessage;
 
   /// Choix manuel de l'environnement:
   /// 0 = dev, 1 = staging, 2 = production
-  static const int _environmentIndex = 1;
+  static const int _environmentIndex = 2;
 
   // Méthode pour déterminer l'URL de base en fonction de l'environnement
   static String get baseUrl => _getBaseUrl();
@@ -113,7 +117,7 @@ class ApiService {
     Object error, {
     String fallback = _msgGenericFailure,
   }) {
-    debugPrint('Erreur technique: $error');
+    AppLogger.error('Erreur technique', error);
     if (_isNetworkOrSystemError(error)) {
       return _msgNetworkFailure;
     }
@@ -132,17 +136,74 @@ class ApiService {
     final trimmed = apiMessage?.trim();
     if (trimmed != null && trimmed.isNotEmpty) {
       if (_hideTechnicalErrorsForUser && _looksTechnicalMessage(trimmed)) {
-        return fallback;
+        return ApiMessageCatalog.normalize(null, httpStatus: httpStatus);
       }
-      return trimmed;
+      return ApiMessageCatalog.normalize(trimmed, httpStatus: httpStatus);
     }
     if (_hideTechnicalErrorsForUser) {
-      return fallback;
+      return ApiMessageCatalog.normalize(null, httpStatus: httpStatus);
     }
     if (httpStatus != null) {
-      return 'Échec (HTTP $httpStatus).';
+      return ApiMessageCatalog.normalize(null, httpStatus: httpStatus);
     }
     return fallback;
+  }
+
+  static String? _readApiErrorMessage(Map<String, dynamic> map) {
+    for (final key in const ['message', 'detail', 'title', 'error']) {
+      final value = map[key]?.toString().trim();
+      if (value != null && value.isNotEmpty) return value;
+    }
+    final errors = map['errors'];
+    if (errors is Map) {
+      for (final entry in errors.entries) {
+        final value = entry.value;
+        if (value is List && value.isNotEmpty) {
+          final first = value.first?.toString().trim();
+          if (first != null && first.isNotEmpty) return first;
+        } else {
+          final text = value?.toString().trim();
+          if (text != null && text.isNotEmpty) return text;
+        }
+      }
+    }
+    return null;
+  }
+
+  static String? _extractReservationErrorMessage(
+    dynamic jsonResponse, {
+    int? httpStatus,
+  }) {
+    if (jsonResponse is! Map) return null;
+    final map = Map<String, dynamic>.from(jsonResponse);
+    if (_isElectronicPaymentPendingResponse(map)) return null;
+
+    final message = _readApiErrorMessage(map);
+
+    final statut = map['statut']?.toString().toLowerCase();
+    if (statut == 'echec' || statut == 'échec') {
+      return message?.isNotEmpty == true ? message : 'La réservation a échoué.';
+    }
+    if (statut != null &&
+        (statut.contains('attente') || statut.contains('pending'))) {
+      return null;
+    }
+    if (message != null &&
+        message.isNotEmpty &&
+        (message.toLowerCase().contains('échou') ||
+            message.toLowerCase().contains('echec') ||
+            message.toLowerCase().contains('erreur'))) {
+      return message;
+    }
+
+    // Réponses 4xx/5xx : le champ `message` suffit (ex. FlexPay non configuré).
+    if (httpStatus != null &&
+        httpStatus >= 400 &&
+        message != null &&
+        message.isNotEmpty) {
+      return message;
+    }
+    return null;
   }
 
   static bool _looksTechnicalMessage(String message) {
@@ -200,7 +261,8 @@ class ApiService {
 
       String? apiMsg;
       if (decoded is Map) {
-        apiMsg = decoded['message']?.toString() ?? decoded['detail']?.toString();
+        apiMsg =
+            decoded['message']?.toString() ?? decoded['detail']?.toString();
       }
       return FlexPayVerifyResult(
         state: FlexPayPaymentState.pending,
@@ -424,7 +486,8 @@ class ApiService {
 
   static String? _orderNumberFromSignalRPayload(dynamic payload) {
     if (payload == null) return null;
-    if (payload is String) return payload.trim().isEmpty ? null : payload.trim();
+    if (payload is String)
+      return payload.trim().isEmpty ? null : payload.trim();
     if (payload is Map) {
       final map = Map<String, dynamic>.from(payload);
       for (final key in [
@@ -755,8 +818,10 @@ class ApiService {
       String? message;
       try {
         final err = json.decode(response.body);
-        if (err is Map && err['message'] != null) {
-          message = err['message'].toString();
+        if (err is Map) {
+          message = err['message']?.toString() ??
+              err['detail']?.toString() ??
+              err['title']?.toString();
         }
       } catch (_) {}
       return UtilisateurPutResult(
@@ -765,10 +830,47 @@ class ApiService {
       );
     } catch (e) {
       debugPrint('Erreur putUtilisateurProfile: $e');
-      return UtilisateurPutResult(
-        ok: false,
-        errorMessage: e.toString(),
+      return UtilisateurPutResult(ok: false, errorMessage: e.toString());
+    }
+  }
+
+  /// `POST /api/Utilisateur/changer_mot_de_passe`
+  static Future<PasswordChangeResult> changerMotDePasse({
+    required String ancienMotDePasse,
+    required String nouveauMotDePasse,
+  }) async {
+    try {
+      final headers = await _getHeaders();
+      final response = await http.post(
+        Uri.parse('$baseUrl/Utilisateur/changer_mot_de_passe'),
+        headers: headers,
+        body: jsonEncode({
+          'ancienMotDePasse': ancienMotDePasse,
+          'nouveauMotDePasse': nouveauMotDePasse,
+        }),
       );
+
+      if (response.statusCode == 200 || response.statusCode == 204) {
+        return const PasswordChangeResult(ok: true);
+      }
+
+      String? message;
+      try {
+        final err = json.decode(response.body);
+        if (err is Map) {
+          message = err['message']?.toString() ??
+              err['detail']?.toString() ??
+              err['title']?.toString();
+        }
+      } catch (_) {}
+
+      return PasswordChangeResult(
+        ok: false,
+        errorMessage: message ?? 'Échec (${response.statusCode})',
+      );
+    } catch (e) {
+      debugPrint('Erreur changerMotDePasse: $e');
+      return PasswordChangeResult(ok: false, errorMessage: e.toString());
     }
   }
 
@@ -1021,32 +1123,6 @@ class ApiService {
     }
   }
 
-  static String? _extractReservationErrorMessage(dynamic jsonResponse) {
-    if (jsonResponse is! Map) return null;
-    final map = Map<String, dynamic>.from(jsonResponse);
-    if (_isElectronicPaymentPendingResponse(map)) return null;
-
-    final statut = map['statut']?.toString().toLowerCase();
-    final message = map['message']?.toString().trim();
-    if (statut == 'echec' || statut == 'échec') {
-      return message?.isNotEmpty == true
-          ? message
-          : 'La réservation a échoué.';
-    }
-    if (statut != null &&
-        (statut.contains('attente') || statut.contains('pending'))) {
-      return null;
-    }
-    if (message != null &&
-        message.isNotEmpty &&
-        (message.toLowerCase().contains('échou') ||
-            message.toLowerCase().contains('echec') ||
-            message.toLowerCase().contains('erreur'))) {
-      return message;
-    }
-    return null;
-  }
-
   /// Ancien contrat FlexPay (champs racine) ou nouveau (reservation/paiement imbriqués).
   static bool _isElectronicPaymentPendingResponse(Map<String, dynamic> map) {
     if (map['idCommandeReservationEnAttente'] != null ||
@@ -1098,25 +1174,27 @@ class ApiService {
         ? Map<String, dynamic>.from(map['reservation'] as Map)
         : <String, dynamic>{};
 
-    final orderNumber = (map['orderNumberFlexPay'] ??
-            paiement['orderNumberFlexPay'] ??
-            map['transactionId'] ??
-            paiement['referenceTransaction'])
-        ?.toString()
-        .trim();
+    final orderNumber =
+        (map['orderNumberFlexPay'] ??
+                paiement['orderNumberFlexPay'] ??
+                map['transactionId'] ??
+                paiement['referenceTransaction'])
+            ?.toString()
+            .trim();
 
     return {
       ...map,
       if (orderNumber != null && orderNumber.isNotEmpty)
         'orderNumberFlexPay': orderNumber,
-      'holdExpireAt':
-          map['holdExpireAt'] ?? paiement['holdExpireAt'],
+      'holdExpireAt': map['holdExpireAt'] ?? paiement['holdExpireAt'],
       'paymentUrl': map['paymentUrl'] ?? paiement['paymentUrl'],
       'idPaiementEnAttente':
           map['idPaiementEnAttente'] ?? paiement['idPaiement'],
-      'idCommandeReservationEnAttente': map['idCommandeReservationEnAttente'] ??
+      'idCommandeReservationEnAttente':
+          map['idCommandeReservationEnAttente'] ??
           reservation['idCommandeReservationEnAttente'],
-      'message': map['message'] ??
+      'message':
+          map['message'] ??
           'Validez le paiement sur votre téléphone. La réservation sera créée après confirmation.',
     };
   }
@@ -1137,7 +1215,8 @@ class ApiService {
         'CASH' || 'ESPECES' || 'ESPÈCES' => 'CASH',
         _ => rawPaiement,
       };
-      final isElectronicPayment = normalizedPaiement == 'MOBILE_MONEY' ||
+      final isElectronicPayment =
+          normalizedPaiement == 'MOBILE_MONEY' ||
           normalizedPaiement == 'CARTE_BANCAIRE' ||
           normalizedPaiement == 'MOBILE MONEY' ||
           normalizedPaiement == 'CARTE BANCAIRE';
@@ -1176,12 +1255,13 @@ class ApiService {
         body: jsonEncode(body),
       );
 
-      debugPrint(
-        'Requête réservation passagers+paiement: $endpoint',
+      AppLogger.api(
+        label: 'Requête réservation passagers+paiement',
+        endpoint: endpoint,
+        statusCode: response.statusCode,
+        body: body,
+        responseBody: response.body,
       );
-      debugPrint('Données: $body');
-      debugPrint('Status code: ${response.statusCode}');
-      debugPrint('Response body: ${response.body}');
 
       dynamic jsonResponse;
       try {
@@ -1191,9 +1271,18 @@ class ApiService {
       }
 
       if (response.statusCode == 200 || response.statusCode == 201) {
-        final failureMsg = _extractReservationErrorMessage(jsonResponse);
+        final failureMsg = _extractReservationErrorMessage(
+          jsonResponse,
+          httpStatus: response.statusCode,
+        );
         if (failureMsg != null) {
-          return ReservationSubmitResult(errorMessage: failureMsg);
+          return ReservationSubmitResult(
+            errorMessage: userFacingApiMessage(
+              failureMsg,
+              httpStatus: response.statusCode,
+              fallback: 'La réservation a échoué. Veuillez réessayer.',
+            ),
+          );
         }
 
         // Nouveau contrat: succès sous forme de liste de billets.
@@ -1209,6 +1298,7 @@ class ApiService {
               }
             }
             final normalized = Map<String, dynamic>.from(first);
+            final prixTotalListe = _sumPrixVoyageFromBilletMaps(jsonResponse);
             normalized['id'] = normalized['id'] ?? normalized['idBillet'] ?? 0;
             normalized['idBilletEmis'] =
                 normalized['idBilletEmis'] ?? normalized['idBillet'] ?? 0;
@@ -1217,10 +1307,19 @@ class ApiService {
                 normalized['dateGeneration'] ??
                 normalized['dateCreation'] ??
                 '';
-            normalized['montantAPaye'] =
-                normalized['montantAPaye'] ?? normalized['prixVoyage'] ?? 0;
-            normalized['montantPaye'] =
+            normalized['montantAPaye'] = prixTotalListe ??
+                normalized['montantAPaye'] ??
+                normalized['prixVoyage'] ??
+                0;
+            var montantPayeNormalise =
                 normalized['montantPaye'] ?? normalized['prixVoyage'] ?? 0;
+            if (prixTotalListe != null &&
+                allBillets.length > 1 &&
+                montantPayeNormalise is num &&
+                montantPayeNormalise < prixTotalListe) {
+              montantPayeNormalise = prixTotalListe;
+            }
+            normalized['montantPaye'] = montantPayeNormalise;
             normalized['resteAPaye'] = normalized['resteAPaye'] ?? 0;
             normalized['methodePaiement'] =
                 normalized['methodePaiement'] ?? 'Mobile Money';
@@ -1235,6 +1334,7 @@ class ApiService {
               response: _buildReservationWithPaiementFromFlatObject(
                 normalized,
                 billetsListe: allBillets.isNotEmpty ? allBillets : null,
+                montantAgregeBillets: prixTotalListe,
               ),
             );
           }
@@ -1250,7 +1350,8 @@ class ApiService {
           }
           final parsed = ReservationWithPaiementResponse.fromJson(jsonResponse);
           final idRes = parsed.reservation.idReservation;
-          final billetOk = parsed.billet != null ||
+          final billetOk =
+              parsed.billet != null ||
               parsed.billets.isNotEmpty ||
               (parsed.paiement.statut == true);
           if (idRes > 0 && billetOk) {
@@ -1259,7 +1360,10 @@ class ApiService {
         }
       }
 
-      final apiMsg = _extractReservationErrorMessage(jsonResponse);
+      final apiMsg = _extractReservationErrorMessage(
+        jsonResponse,
+        httpStatus: response.statusCode,
+      );
       return ReservationSubmitResult(
         errorMessage: userFacingApiMessage(
           apiMsg,
@@ -1268,15 +1372,13 @@ class ApiService {
         ),
       );
     } catch (e, stack) {
-      debugPrint(
-        'Erreur lors de la création de la réservation '
-        'avec passagers et paiement: $e\n$stack',
+      AppLogger.error(
+        'Erreur lors de la création de la réservation avec passagers et paiement',
+        e,
+        stack,
       );
       return ReservationSubmitResult(
-        errorMessage: userFacingError(
-          e,
-          fallback: _msgNetworkFailure,
-        ),
+        errorMessage: userFacingError(e, fallback: _msgNetworkFailure),
       );
     }
   }
@@ -1529,8 +1631,8 @@ class ApiService {
     try {
       final uri = Uri.parse('$baseUrl/CategorieSiege/societe/$idSociete')
           .replace(
-        queryParameters: {'actifsSeulement': actifsSeulement.toString()},
-      );
+            queryParameters: {'actifsSeulement': actifsSeulement.toString()},
+          );
 
       Future<http.Response> getWithAuth(bool requiresAuth) async {
         final headers = await _getHeaders(requiresAuth: requiresAuth);
@@ -1825,9 +1927,9 @@ class ApiService {
         if (date != null)
           'date': DateTime(date.year, date.month, date.day).toIso8601String(),
       };
-      final uri = Uri.parse('$baseUrl/Voyage/paged').replace(
-        queryParameters: qp,
-      );
+      final uri = Uri.parse(
+        '$baseUrl/Voyage/paged',
+      ).replace(queryParameters: qp);
 
       debugPrint('Requête voyages paged: $uri');
 
@@ -1878,9 +1980,9 @@ class ApiService {
         if (date != null)
           'date': DateTime(date.year, date.month, date.day).toIso8601String(),
       };
-      final uri = Uri.parse('$baseUrl/Voyage/societe/$idSociete/paged').replace(
-        queryParameters: qp,
-      );
+      final uri = Uri.parse(
+        '$baseUrl/Voyage/societe/$idSociete/paged',
+      ).replace(queryParameters: qp);
       debugPrint('Requête voyages société paged: $uri');
       final response = await http.get(uri, headers: headers);
       debugPrint('Status voyages société paged: ${response.statusCode}');
@@ -1902,7 +2004,8 @@ class ApiService {
     if (decoded is List) {
       list = decoded;
     } else if (decoded is Map<String, dynamic>) {
-      final inner = decoded['data'] ??
+      final inner =
+          decoded['data'] ??
           decoded['passagers'] ??
           decoded['items'] ??
           decoded['result'];
@@ -1934,7 +2037,9 @@ class ApiService {
         final response = await http.get(Uri.parse(path), headers: headers);
         debugPrint('getPassagersByVoyage $path → ${response.statusCode}');
         if (response.statusCode == 200) {
-          final list = _parseVoyagePassagersResponse(json.decode(response.body));
+          final list = _parseVoyagePassagersResponse(
+            json.decode(response.body),
+          );
           if (list.isNotEmpty) return list;
         }
       } catch (e) {
@@ -2045,17 +2150,17 @@ class ApiService {
     if (idSociete <= 0) return null;
     try {
       final headers = await _getHeaders();
-      final uri =
-          Uri.parse('$baseUrl/Destination/societe/$idSociete/paged').replace(
-        queryParameters: {
-          'PageNumber': pageNumber.toString(),
-          'PageSize': pageSize.toString(),
-          if (searchTerm != null && searchTerm.isNotEmpty)
-            'SearchTerm': searchTerm,
-          if (sortBy != null && sortBy.isNotEmpty) 'SortBy': sortBy,
-          'SortDescending': sortDescending.toString(),
-        },
-      );
+      final uri = Uri.parse('$baseUrl/Destination/societe/$idSociete/paged')
+          .replace(
+            queryParameters: {
+              'PageNumber': pageNumber.toString(),
+              'PageSize': pageSize.toString(),
+              if (searchTerm != null && searchTerm.isNotEmpty)
+                'SearchTerm': searchTerm,
+              if (sortBy != null && sortBy.isNotEmpty) 'SortBy': sortBy,
+              'SortDescending': sortDescending.toString(),
+            },
+          );
       debugPrint('Requête destinations société (paged): $uri');
       final response = await http.get(uri, headers: headers);
       debugPrint('Status destinations société (paged): ${response.statusCode}');
@@ -2090,7 +2195,9 @@ class ApiService {
           sortDescending: sortDescending,
         );
         if (resp == null) break;
-        all.addAll(resp.data.where((d) => d.statut && d.idSociete == idSociete));
+        all.addAll(
+          resp.data.where((d) => d.statut && d.idSociete == idSociete),
+        );
         if (!resp.hasNextPage || resp.data.isEmpty) break;
         page++;
       }
@@ -2176,7 +2283,8 @@ class ApiService {
       if (decoded is List) {
         list = decoded;
       } else if (decoded is Map<String, dynamic>) {
-        final inner = decoded['data'] ??
+        final inner =
+            decoded['data'] ??
             decoded['passagers'] ??
             decoded['items'] ??
             decoded['result'];
@@ -2344,15 +2452,15 @@ class ApiService {
               debugPrint('Liste de billets sans objet valide');
               return null;
             }
-            final first = Map<String, dynamic>.from(
-              jsonResponse.first as Map,
-            );
+            final first = Map<String, dynamic>.from(jsonResponse.first as Map);
+            final prixTotalListe = _sumPrixVoyageFromBilletMaps(jsonResponse);
             debugPrint(
               'Billets récupérés: ${billetObjects.length} pour la réservation',
             );
             return _buildReservationWithPaiementFromFlatObject(
               first,
               billetsListe: billetObjects,
+              montantAgregeBillets: prixTotalListe,
             );
           } else {
             debugPrint('Liste de billets vide');
@@ -2502,7 +2610,8 @@ class ApiService {
       try {
         final decoded = json.decode(response.body);
         if (decoded is Map) {
-          msg = decoded['message']?.toString() ??
+          msg =
+              decoded['message']?.toString() ??
               decoded['detail']?.toString() ??
               decoded['title']?.toString() ??
               msg;
@@ -2624,7 +2733,8 @@ class ApiService {
       try {
         final decoded = json.decode(response.body);
         if (decoded is Map) {
-          msg = decoded['detail']?.toString() ??
+          msg =
+              decoded['detail']?.toString() ??
               decoded['title']?.toString() ??
               decoded['message']?.toString() ??
               msg;
@@ -2637,10 +2747,28 @@ class ApiService {
     }
   }
 
+  // Helper: somme des prix unitaires sur une liste de billets JSON.
+  static double? _sumPrixVoyageFromBilletMaps(Iterable<dynamic> items) {
+    var sum = 0.0;
+    var found = false;
+    for (final item in items) {
+      if (item is! Map) continue;
+      final map = Map<String, dynamic>.from(item);
+      final raw = map['prixVoyage'] ?? map['montantAPaye'] ?? map['montantPaye'];
+      if (raw is num && raw > 0) {
+        sum += raw.toDouble();
+        found = true;
+      }
+    }
+    return found ? sum : null;
+  }
+
   // Helper: construit ReservationWithPaiementResponse à partir d'un objet plat (format API Billet/reservation/{id})
-  static ReservationWithPaiementResponse _buildReservationWithPaiementFromFlatObject(
+  static ReservationWithPaiementResponse
+  _buildReservationWithPaiementFromFlatObject(
     Map<String, dynamic> data, {
     List<BilletData>? billetsListe,
+    double? montantAgregeBillets,
   }) {
     //extraire paiement si présent, sinon construire un PaiementData par défaut à partir des champs disponibles
     PaiementData paiement;
@@ -2710,10 +2838,68 @@ class ApiService {
           ? _parseHeureVoyage(data['heureVoyage'])
           : null,
       prixVoyage: (data['prixVoyage'] ?? 0).toDouble(),
-      numeroBus: data['numeroBus'],
+      numeroBus: data['numeroBus'] ?? data['aliasVehicule'],
       villeDepart: data['villeDepart'],
       villeArrivee: data['villeArrivee'],
     );
+
+    if (montantAgregeBillets != null && montantAgregeBillets > 0) {
+      final nbBillets = billetsListe?.length ?? 0;
+      final doitCorriger = nbBillets > 1 ||
+          montantAgregeBillets > paiement.montantAPaye;
+      if (doitCorriger) {
+        final montantCorrige = montantAgregeBillets;
+        var montantPayeCorrige = paiement.montantPaye > 0
+            ? paiement.montantPaye
+            : montantCorrige;
+        if (nbBillets > 1 &&
+            paiement.estComplet &&
+            montantPayeCorrige < montantCorrige) {
+          montantPayeCorrige = montantCorrige;
+        }
+        paiement = PaiementData(
+          idPaiement: paiement.idPaiement,
+          montantAPaye: montantCorrige > paiement.montantAPaye
+              ? montantCorrige
+              : paiement.montantAPaye,
+          montantPaye: montantPayeCorrige,
+        resteAPaye: paiement.resteAPaye,
+        methodePaiement: paiement.methodePaiement,
+        referenceTransaction: paiement.referenceTransaction,
+        statut: paiement.statut,
+        dateCreation: paiement.dateCreation,
+        dateEmissionBillet: paiement.dateEmissionBillet,
+        idBilletEmis: paiement.idBilletEmis,
+        idReservation: paiement.idReservation,
+        idSociete: paiement.idSociete,
+        estComplet: paiement.estComplet,
+        estPartiel: paiement.estPartiel,
+      );
+      reservation = ReservationData(
+        idReservation: reservation.idReservation,
+        idUtilisateur: reservation.idUtilisateur,
+        idClient: reservation.idClient,
+        idVoyage: reservation.idVoyage,
+        statutReservation: reservation.statutReservation,
+        statut: reservation.statut,
+        dateReservation: reservation.dateReservation,
+        idSociete: reservation.idSociete,
+        dateCreation: reservation.dateCreation,
+        dateModification: reservation.dateModification,
+        nomUtilisateur: reservation.nomUtilisateur,
+        emailUtilisateur: reservation.emailUtilisateur,
+        nomClient: reservation.nomClient,
+        prenomClient: reservation.prenomClient,
+        telephoneClient: reservation.telephoneClient,
+        dateVoyage: reservation.dateVoyage,
+        heureVoyage: reservation.heureVoyage,
+        prixVoyage: montantCorrige,
+        numeroBus: reservation.numeroBus,
+        villeDepart: reservation.villeDepart,
+        villeArrivee: reservation.villeArrivee,
+      );
+      }
+    }
 
     final BilletData billetEffectif =
         (billetsListe != null && billetsListe.isNotEmpty)

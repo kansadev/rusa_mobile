@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:rusa/screens/caissier/CaissierClientsListScreen.dart';
 import 'package:rusa/screens/caissier/CaissierDashboardScreen.dart';
+import 'package:rusa/screens/caissier/CaissierDashboardStatsDetailsScreen.dart';
 import 'package:rusa/screens/caissier/CaissierProfileScreen.dart';
 import 'package:rusa/screens/client/AllVoyagesScreen.dart';
 
@@ -16,6 +18,7 @@ class _CaissierNavigationWrapperState extends State<CaissierNavigationWrapper> {
 
   final List<Widget> _screens = const [
     CaissierDashboardScreen(),
+    CaissierDashboardStatsDetailsScreen(embeddedInNav: true),
     AllVoyagesScreen(showBack: false),
     CaissierProfileScreen(),
   ];
@@ -27,6 +30,7 @@ class _CaissierNavigationWrapperState extends State<CaissierNavigationWrapper> {
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _index,
         onTap: (i) => setState(() => _index = i),
+        type: BottomNavigationBarType.fixed,
         selectedItemColor: const Color(0xFF00E676),
         unselectedItemColor: Colors.white54,
         backgroundColor: const Color(0xFF222222),
@@ -35,6 +39,11 @@ class _CaissierNavigationWrapperState extends State<CaissierNavigationWrapper> {
             icon: Icon(Icons.dashboard_outlined),
             label: 'Dashboard',
           ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.bar_chart_rounded),
+            label: 'Statistiques',
+          ),
+
           BottomNavigationBarItem(
             icon: Icon(Icons.directions_bus_filled_outlined),
             label: 'Voyages',

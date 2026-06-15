@@ -14,6 +14,7 @@ import 'package:rusa/services/cache_service.dart';
 import 'package:rusa/services/location_service.dart';
 import 'package:rusa/models/voyage_model.dart';
 import 'package:rusa/utils/voyage_periode_filter.dart';
+import 'package:rusa/widgets/password_change_reminder.dart';
 
 class SearchTripScreen extends StatefulWidget {
   const SearchTripScreen({super.key});
@@ -439,7 +440,10 @@ class _SearchTripScreenState extends State<SearchTripScreen> {
                   ),
                 ],
               ),
-              const SizedBox(height: 20),
+              const PasswordChangeReminder(
+                margin: EdgeInsets.only(bottom: 12),
+              ),
+              const SizedBox(height: 8),
               AnimatedContainer(
                 duration: const Duration(milliseconds: 300),
                 curve: Curves.easeInOut,

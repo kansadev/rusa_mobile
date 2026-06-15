@@ -12,6 +12,7 @@ import 'package:rusa/services/session_service.dart';
 import 'package:rusa/services/cache_service.dart';
 import 'package:rusa/services/location_service.dart';
 import 'package:rusa/screens/auth/LoginScreen.dart';
+import 'package:rusa/widgets/password_change_reminder.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -312,6 +313,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
               child: Column(
                 children: [
+                  const PasswordChangeReminder(
+                    margin: EdgeInsets.only(bottom: 16),
+                  ),
                   // --- CARTE PROFIL ---
                   _buildCard(cardColor, [
                     ListTile(

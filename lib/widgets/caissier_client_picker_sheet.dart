@@ -175,7 +175,7 @@ class _CaissierClientPickerSheetState extends State<CaissierClientPickerSheet> {
                     shrinkWrap: true,
                     padding: EdgeInsets.fromLTRB(16, 8, 16, 12 + bottom),
                     itemCount: _visible.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 6),
+                    separatorBuilder: (_, _) => const SizedBox(height: 6),
                     itemBuilder: (context, i) {
                       final c = _visible[i];
                       return Material(

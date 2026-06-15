@@ -6,9 +6,14 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:rusa/screens/caissier/BilletQrScannerScreen.dart';
 import 'package:rusa/screens/caissier/CaissierAddClientScreen.dart';
 import 'package:rusa/screens/caissier/CaissierClientsListScreen.dart';
+import 'package:rusa/screens/caissier/CaissierDashboardStatsDetailsScreen.dart';
 import 'package:rusa/screens/caissier/CaissierVoyagePassagersScreen.dart';
 import 'package:rusa/services/api_service.dart';
 import 'package:rusa/services/cache_service.dart';
+import 'package:rusa/widgets/caissier_revenue_histogram.dart';
+import 'package:rusa/widgets/caissier_shimmer.dart';
+import 'package:rusa/widgets/password_change_reminder.dart';
+import 'package:rusa/widgets/time_based_greeting.dart';
 
 class CaissierDashboardScreen extends StatefulWidget {
   const CaissierDashboardScreen({super.key});
@@ -56,8 +61,18 @@ class _CaissierDashboardScreenState extends State<CaissierDashboardScreen> {
 
   String _fmt(dynamic value) {
     final n = value is num ? value.toDouble() : double.tryParse('$value') ?? 0;
-    return n.toStringAsFixed(2);
+    return n.toStringAsFixed(0);
   }
+
+  String _fmtPct(dynamic value) {
+    if (value == null) return '—';
+    final n = value is num ? value.toDouble() : double.tryParse('$value');
+    if (n == null) return '—';
+    final sign = n >= 0 ? '+' : '';
+    return '$sign${n.toStringAsFixed(1)}%';
+  }
+
+  String _devise() => (_dashboard?['codeDevisePrincipale'] ?? 'FC').toString();
 
   String _shortDate(String? iso) {
     if (iso == null || iso.isEmpty) return '';
@@ -72,6 +87,12 @@ class _CaissierDashboardScreenState extends State<CaissierDashboardScreen> {
         (_dashboard?['statistiquesJournalieres'] as Map<String, dynamic>?) ??
         {};
     final resume = (_dashboard?['resumeCaisse'] as Map<String, dynamic>?) ?? {};
+    final perf =
+        (_dashboard?['performancesMensuelles'] as Map<String, dynamic>?) ?? {};
+    final recettes =
+        (_dashboard?['recettesJournalieres'] as List?)?.cast<dynamic>() ??
+        const [];
+
     final paiements =
         (_dashboard?['paiementsRecents'] as List?)?.cast<dynamic>() ?? const [];
 
@@ -92,9 +113,7 @@ class _CaissierDashboardScreenState extends State<CaissierDashboardScreen> {
         label: const Text('Scanner billet'),
       ),
       body: _isLoading
-          ? const Center(
-              child: CircularProgressIndicator(color: Color(0xFF29F58B)),
-            )
+          ? const CaissierDashboardShimmer()
           : RefreshIndicator(
               onRefresh: _loadDashboard,
               color: const Color(0xFF29F58B),
@@ -115,12 +134,28 @@ class _CaissierDashboardScreenState extends State<CaissierDashboardScreen> {
                     padding: const EdgeInsets.symmetric(horizontal: 20),
                     child: Column(
                       children: [
+                        const PasswordChangeReminder(),
+                        const SizedBox(height: 16),
                         _buildQuickActions(),
                         const SizedBox(height: 20),
 
                         _buildStatsModern(
-                          moyenneTransaction: _fmt(stats['moyenneTransaction']),
-                          nombrePassagers: '${stats['nombrePassagers'] ?? 0}',
+                          performancesMensuelles: perf,
+                          recettesJournalieres: recettes,
+                          devise: _devise(),
+                          onDetails: _dashboard == null
+                              ? null
+                              : () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) =>
+                                          CaissierDashboardStatsDetailsScreen(
+                                            dashboard: _dashboard!,
+                                          ),
+                                    ),
+                                  );
+                                },
                         ),
 
                         const SizedBox(height: 20),
@@ -171,7 +206,7 @@ class _CaissierDashboardScreenState extends State<CaissierDashboardScreen> {
           borderRadius: BorderRadius.circular(24),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.4),
+              color: Colors.black.withValues(alpha: 0.4),
               blurRadius: 20,
               offset: const Offset(0, 10),
             ),
@@ -279,24 +314,14 @@ class _CaissierDashboardScreenState extends State<CaissierDashboardScreen> {
   Widget _buildHeader() {
     return Row(
       children: [
-        Container(
-          width: 42,
-          height: 42,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            border: Border.all(color: Colors.white, width: 2),
-          ),
-          clipBehavior: Clip.antiAlias,
-          child: _buildUserAvatar(),
-        ),
+        _buildAvatarFrame(),
         const SizedBox(width: 10),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                'Bonjour \u{1F44B}', // Emoji main qui fait coucou
-                style: TextStyle(color: Color(0xFF093120), fontSize: 13),
+              TimeBasedGreeting(
+                style: const TextStyle(color: Color(0xFF093120), fontSize: 13),
               ),
               Text(
                 _userDisplayName,
@@ -328,35 +353,45 @@ class _CaissierDashboardScreenState extends State<CaissierDashboardScreen> {
     );
   }
 
+  Widget _buildAvatarFrame() {
+    return Container(
+      width: 42,
+      height: 42,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        border: Border.all(color: Colors.white, width: 2),
+      ),
+      child: ClipOval(
+        child: SizedBox.expand(child: _buildUserAvatar()),
+      ),
+    );
+  }
+
   Widget _buildUserAvatar() {
     final rawPhoto = _userPhotoUrl?.trim() ?? '';
     final hasPhoto = rawPhoto.isNotEmpty;
 
     if (hasPhoto &&
         (rawPhoto.startsWith('http://') || rawPhoto.startsWith('https://'))) {
-      return ClipOval(
-        child: Image.network(
-          rawPhoto,
-          fit: BoxFit.cover,
-          width: double.infinity,
-          height: double.infinity,
-          errorBuilder: (context, error, stackTrace) => _defaultAvatarIcon(),
-        ),
+      return Image.network(
+        rawPhoto,
+        fit: BoxFit.cover,
+        width: double.infinity,
+        height: double.infinity,
+        errorBuilder: (context, error, stackTrace) => _defaultAvatarIcon(),
       );
     }
 
     if (hasPhoto) {
       final bytes = _decodeBase64Image(rawPhoto);
       if (bytes != null) {
-        return ClipOval(
-          child: Image.memory(
-            bytes,
-            fit: BoxFit.cover,
-            width: double.infinity,
-            height: double.infinity,
-            gaplessPlayback: true,
-            errorBuilder: (context, error, stackTrace) => _defaultAvatarIcon(),
-          ),
+        return Image.memory(
+          bytes,
+          fit: BoxFit.cover,
+          width: double.infinity,
+          height: double.infinity,
+          gaplessPlayback: true,
+          errorBuilder: (context, error, stackTrace) => _defaultAvatarIcon(),
         );
       }
     }
@@ -365,13 +400,13 @@ class _CaissierDashboardScreenState extends State<CaissierDashboardScreen> {
   }
 
   Widget _defaultAvatarIcon() {
-    return const SizedBox.expand(
-      child: ColoredBox(
+    return Container(
+      alignment: Alignment.center,
+      decoration: const BoxDecoration(
         color: Color(0xFF093120),
-        child: Center(
-          child: Icon(Icons.person_rounded, color: Colors.white, size: 26),
-        ),
+        shape: BoxShape.circle,
       ),
+      child: const Icon(Icons.person_rounded, color: Colors.white, size: 22),
     );
   }
 
@@ -387,9 +422,38 @@ class _CaissierDashboardScreenState extends State<CaissierDashboardScreen> {
   }
 
   Widget _buildStatsModern({
-    required String moyenneTransaction,
-    required String nombrePassagers,
+    required Map<String, dynamic> performancesMensuelles,
+    required List<dynamic> recettesJournalieres,
+    required String devise,
+    VoidCallback? onDetails,
   }) {
+    final moisEnCours =
+        (performancesMensuelles['moisEnCours'] as Map<String, dynamic>?) ?? {};
+    final moisPrecedent =
+        (performancesMensuelles['moisPrecedent'] as Map<String, dynamic>?) ??
+        {};
+    final synthese =
+        (performancesMensuelles['synthese'] as Map<String, dynamic>?) ?? {};
+
+    final encaissementsActuel = _fmt(moisEnCours['totalEncaissements']);
+    final encaissementsPrecedent = _fmt(moisPrecedent['totalEncaissements']);
+    final variation = _fmtPct(synthese['variationEncaissementsPourcentage']);
+    final libelleActuel = (moisEnCours['libelle'] ?? 'Mois en cours')
+        .toString();
+    final libellePrecedent = (moisPrecedent['libelle'] ?? 'Mois précédent')
+        .toString();
+    final transactions = '${moisEnCours['nombreTransactions'] ?? 0}';
+    final passagers = '${moisEnCours['nombrePassagers'] ?? 0}';
+
+    final variationPositive = !variation.startsWith('-');
+    final variationColor = variationPositive
+        ? const Color(0xFF29F58B)
+        : const Color(0xFFFF6B6B);
+
+    final histogramBars = CaissierRevenueHistogram.fromRecettesJournalieres(
+      recettesJournalieres,
+    );
+
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
@@ -399,50 +463,95 @@ class _CaissierDashboardScreenState extends State<CaissierDashboardScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            "Statistiques",
-            style: TextStyle(color: Colors.white, fontSize: 14),
+          Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  'Statistiques',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              if (onDetails != null)
+                TextButton(
+                  onPressed: onDetails,
+                  style: TextButton.styleFrom(
+                    foregroundColor: const Color(0xFF29F58B),
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  child: const Text('Détails'),
+                ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            libelleActuel,
+            style: const TextStyle(color: Colors.white38, fontSize: 11),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Expanded(
+                child: Text(
+                  '$encaissementsActuel $devise',
+                  style: GoogleFonts.poppins(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 20,
+                  ),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: variationColor.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  variation,
+                  style: TextStyle(
+                    color: variationColor,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '$libellePrecedent : $encaissementsPrecedent $devise',
+            style: const TextStyle(color: Colors.white38, fontSize: 11),
           ),
           const SizedBox(height: 12),
-
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                "$moyenneTransaction FC",
-                style: const TextStyle(color: Colors.white70),
+                '$transactions transactions',
+                style: const TextStyle(color: Colors.white54, fontSize: 12),
               ),
               Text(
-                "$nombrePassagers passagers",
-                style: const TextStyle(color: Colors.white38),
+                '$passagers passagers',
+                style: const TextStyle(color: Colors.white38, fontSize: 12),
               ),
             ],
           ),
-
           const SizedBox(height: 16),
-
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: List.generate(
-              6,
-              (i) => _buildBar(
-                (i == 2) ? 45 : (10 + i * 5).toDouble(),
-                i == 2 ? const Color(0xFF29F58B) : Colors.white24,
-              ),
+          if (histogramBars.isNotEmpty)
+            CaissierRevenueHistogram(bars: histogramBars, devise: devise)
+          else
+            const Text(
+              'Pas de recettes sur les derniers jours',
+              style: TextStyle(color: Colors.white38, fontSize: 11),
             ),
-          ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildBar(double height, Color color) {
-    return Container(
-      width: 6,
-      height: height,
-      decoration: BoxDecoration(
-        color: color,
-        borderRadius: BorderRadius.circular(4),
       ),
     );
   }

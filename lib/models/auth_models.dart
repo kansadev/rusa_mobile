@@ -223,6 +223,7 @@ class Utilisateur {
     String? lieuNaissance,
     String? dateNaissance,
     String? genre,
+    bool? doitChangerMotDePasse,
   }) {
     return Utilisateur(
       idUtilisateur: idUtilisateur,
@@ -234,7 +235,8 @@ class Utilisateur {
       lieuNaissance: lieuNaissance ?? this.lieuNaissance,
       dateNaissance: dateNaissance ?? this.dateNaissance,
       genre: genre ?? this.genre,
-      doitChangerMotDePasse: doitChangerMotDePasse,
+      doitChangerMotDePasse:
+          doitChangerMotDePasse ?? this.doitChangerMotDePasse,
       statut: statut,
       idRole: idRole,
       idSociete: idSociete,

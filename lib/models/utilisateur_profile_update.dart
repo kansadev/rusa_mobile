@@ -37,12 +37,21 @@ class UtilisateurProfileUpdate {
     return {
       'idUtilisateur': idUtilisateur,
       'nomComplet': nomComplet,
-      'email': email,
-      'telephone': telephone,
+      'email': email.trim().isEmpty ? null : email.trim(),
+      'telephone': telephone.trim().isEmpty ? null : telephone.trim(),
       if (photoUrl != null) 'photoUrl': photoUrl,
-      if (lieuNaissance != null) 'lieuNaissance': lieuNaissance,
-      if (dateNaissance != null) 'dateNaissance': dateNaissance,
-      'genre': genre,
+      if (lieuNaissance != null && lieuNaissance!.trim().isNotEmpty)
+        'lieuNaissance': lieuNaissance!.trim(),
+      if (dateNaissance != null && dateNaissance!.trim().isNotEmpty)
+        'dateNaissance': dateNaissance,
+      if (genre.trim().isNotEmpty) 'genre': genreForApi(genre),
     };
+  }
+
+  static String genreForApi(String genre) {
+    final g = genre.trim().toLowerCase();
+    if (g == 'homme' || g == 'm' || g.startsWith('mascul')) return 'M';
+    if (g == 'femme' || g == 'f') return 'F';
+    return genre.trim();
   }
 }

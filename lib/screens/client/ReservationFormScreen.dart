@@ -13,6 +13,9 @@ import '../../services/api_service.dart';
 import '../../services/cache_service.dart';
 import '../../services/session_service.dart';
 import 'MobileMoneyPendingScreen.dart';
+import 'package:rusa/widgets/app_feedback.dart';
+import 'package:rusa/screens/caissier/CaissierTicketReceiptScreen.dart';
+
 import 'TicketReceiptScreen.dart';
 
 class ReservationFormScreen extends StatefulWidget {
@@ -520,7 +523,7 @@ class _ReservationFormScreenState extends State<ReservationFormScreen> {
         .reduce((a, b) => a > b ? a : b);
   }
 
-  /// Somme des tarifs : vous + chaque passager ajouté (chaque catégorie peut différer).
+  /// Somme des tarifs : chaque passager selon sa catégorie de siège.
   double get _montantTotal {
     if (_isVenteCaissier && _selectedClient != null) {
       final catId = _clientPassagerCategorieSiegeId;
@@ -535,13 +538,11 @@ class _ReservationFormScreenState extends State<ReservationFormScreen> {
     var sum = 0.0;
     if (_selfIsPassenger) {
       final idTit = _selfCategorieSiegeId;
-      if (idTit == null) {
-        if (widget.voyage.prix > 0) {
-          return widget.voyage.prix * _nombrePlaces;
-        }
-        return 0;
+      if (idTit != null) {
+        sum += _prixPourCategorieSiege(idTit);
+      } else if (widget.voyage.prix > 0) {
+        sum += widget.voyage.prix;
       }
-      sum += _prixPourCategorieSiege(idTit);
     }
     if (_showPassengersSection && !_isVenteCaissier) {
       for (final p in _passagersAjoutes) {
@@ -741,6 +742,8 @@ class _ReservationFormScreenState extends State<ReservationFormScreen> {
                 final name = (c.displayName ?? '').trim();
                 final phone = c.phones.isNotEmpty ? c.phones.first.number : '';
                 return ListTile(
+                  tileColor: const Color(0xFF252525),
+                  splashColor: Colors.white12,
                   title: Text(
                     name.isEmpty ? 'Sans nom' : name,
                     style: const TextStyle(color: Colors.white),
@@ -1043,41 +1046,37 @@ class _ReservationFormScreenState extends State<ReservationFormScreen> {
       if (!mounted) return;
 
       if (!result.isSuccess || result.response == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              result.errorMessage ??
-                  'Échec de la réservation. Essayez une autre catégorie de siège.',
-            ),
-            backgroundColor: Colors.red,
-            duration: const Duration(seconds: 6),
-          ),
+        AppFeedback.showError(
+          context,
+          result.errorMessage ??
+              'Échec de la réservation. Essayez une autre catégorie de siège.',
         );
         return;
       }
 
       final response = result.response!;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            _isVenteCaissier
-                ? 'Vente enregistrée avec succès.'
-                : 'Réservation créée avec succès.',
-          ),
-          backgroundColor: const Color(0xFF00E676),
-        ),
+      AppFeedback.showSuccess(
+        context,
+        _isVenteCaissier
+            ? 'Vente enregistrée avec succès.'
+            : 'Réservation créée avec succès.',
       );
 
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(
-          builder: (context) => TicketReceiptScreen(
-            reservationData: response.reservation,
-            paiementData: response.paiement,
-            billetData: response.billet,
-            billets: response.billets,
-          ),
+          builder: (context) => _isVenteCaissier
+              ? CaissierTicketReceiptScreen(
+                  idReservation: response.reservation.idReservation,
+                  paiementHint: response.paiement,
+                )
+              : TicketReceiptScreen(
+                  reservationData: response.reservation,
+                  paiementData: response.paiement,
+                  billetData: response.billet,
+                  billets: response.billets,
+                ),
         ),
       );
     } finally {
@@ -1213,6 +1212,7 @@ class _ReservationFormScreenState extends State<ReservationFormScreen> {
                     border: Border.all(color: Colors.white12),
                   ),
                   child: SwitchListTile(
+                    tileColor: const Color(0xFF222222),
                     value: _passagersAdditionnelsActifs,
                     onChanged: _setPassagersAdditionnelsActifs,
                     activeThumbColor: const Color(0xFF29F58B),
@@ -1571,6 +1571,8 @@ class _ReservationFormScreenState extends State<ReservationFormScreen> {
                 color: const Color(0xFF252525),
                 margin: const EdgeInsets.only(bottom: 8),
                 child: ListTile(
+                  tileColor: const Color(0xFF2C2C2C),
+                  splashColor: Colors.white12,
                   title: Text(
                     p.nomComplet,
                     style: const TextStyle(
