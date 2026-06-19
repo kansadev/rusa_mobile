@@ -14,6 +14,7 @@ import '../../services/cache_service.dart';
 import '../../services/session_service.dart';
 import 'MobileMoneyPendingScreen.dart';
 import 'package:rusa/widgets/app_feedback.dart';
+import 'package:rusa/widgets/payment_fee_notice.dart';
 import 'package:rusa/screens/caissier/CaissierTicketReceiptScreen.dart';
 
 import 'TicketReceiptScreen.dart';
@@ -73,6 +74,7 @@ class _ReservationFormScreenState extends State<ReservationFormScreen> {
     _selectedClient = widget.client;
     if (widget.client != null) {
       _isCaissier = true;
+      _methodePaiement = 'CASH';
     }
     _syncPlacesAndMontant();
     _loadRoleContext();
@@ -196,6 +198,7 @@ class _ReservationFormScreenState extends State<ReservationFormScreen> {
       setState(() {
         _isCaissier = true;
         _selectedClient = widget.client;
+        _methodePaiement = 'CASH';
         _syncPlacesAndMontant();
       });
       _ensureClientsLoaded();
@@ -211,6 +214,9 @@ class _ReservationFormScreenState extends State<ReservationFormScreen> {
     if (!mounted) return;
     setState(() {
       _isCaissier = isCaissier;
+      if (isCaissier) {
+        _methodePaiement = 'CASH';
+      }
       _syncPlacesAndMontant();
     });
     if (isCaissier) {
@@ -346,9 +352,11 @@ class _ReservationFormScreenState extends State<ReservationFormScreen> {
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 3),
-                Text(
-                  'Ce numéro sera utilisé pour le paiement/réservation de votre billet. Rassurez-vous d\'avoir saisi le bon numéro. un pourcentage de 2.5% sera appliqué.',
-                  style: TextStyle(fontSize: 12),
+                PaymentFeesLearnMoreText(
+                  prefix: 'Ce numéro sera utilisé pour le paiement de votre billet.',
+                  voyage: widget.voyage,
+                  isCaissier: _isVenteCaissier,
+                  fontSize: 12,
                 ),
                 const SizedBox(height: 10),
                 TextFormField(
@@ -424,7 +432,8 @@ class _ReservationFormScreenState extends State<ReservationFormScreen> {
   }
 
   void _handlePaymentMethodChanged(String? value) {
-    final newMethod = value ?? 'MOBILE_MONEY';
+    final newMethod = value ??
+        (_isCaissier ? 'CASH' : 'MOBILE_MONEY');
     final previousMethod = _methodePaiement;
 
     if (newMethod != 'MOBILE_MONEY') {
@@ -433,6 +442,7 @@ class _ReservationFormScreenState extends State<ReservationFormScreen> {
         _mobileMoneyPhoneToSend = null;
         _isMobileMoneyPhoneConfirmed = false;
       });
+      _syncPlacesAndMontant();
       return;
     }
 
@@ -460,6 +470,7 @@ class _ReservationFormScreenState extends State<ReservationFormScreen> {
         _mobileMoneyPhoneToSend = confirmedPhone.trim();
         _isMobileMoneyPhoneConfirmed = true;
       });
+      _syncPlacesAndMontant();
     } else {
       setState(() {
         _methodePaiement = previousMethod;
@@ -511,20 +522,15 @@ class _ReservationFormScreenState extends State<ReservationFormScreen> {
     return c;
   }
 
-  /// Prix d’une place pour cette catégorie (tarifs du voyage, sinon `prix` global).
-  double _prixPourCategorieSiege(int idCategorieSiege) {
-    for (final t in widget.voyage.tarifs) {
-      if (t.idCategorieSiege == idCategorieSiege) return t.prix;
-    }
-    if (widget.voyage.prix > 0) return widget.voyage.prix;
-    if (widget.voyage.tarifs.isEmpty) return 0;
-    return widget.voyage.tarifs
-        .map((t) => t.prix)
-        .reduce((a, b) => a > b ? a : b);
-  }
+  String get _suffixeDeviseMajoration =>
+      widget.voyage.deviseMajorationPaieElectronique;
 
-  /// Somme des tarifs : chaque passager selon sa catégorie de siège.
-  double get _montantTotal {
+  bool get _isPaiementElectronique =>
+      _methodePaiement == 'MOBILE_MONEY' ||
+      _methodePaiement == 'CARTE_BANCAIRE';
+
+  /// Somme des tarifs billets uniquement (hors majoration électronique).
+  double get _montantBillets {
     if (_isVenteCaissier && _selectedClient != null) {
       final catId = _clientPassagerCategorieSiegeId;
       if (catId == null) return 0;
@@ -552,6 +558,26 @@ class _ReservationFormScreenState extends State<ReservationFormScreen> {
     return sum;
   }
 
+  double get _montantMajorationElectronique {
+    if (!_isPaiementElectronique) return 0;
+    return widget.voyage.majorationPaieElectroniquePour(_requiredPlaces);
+  }
+
+  /// Total dû (billets + majoration électronique si applicable).
+  double get _montantTotalDu => _montantBillets + _montantMajorationElectronique;
+
+  /// Prix d’une place pour cette catégorie (tarifs du voyage, sinon `prix` global).
+  double _prixPourCategorieSiege(int idCategorieSiege) {
+    for (final t in widget.voyage.tarifs) {
+      if (t.idCategorieSiege == idCategorieSiege) return t.prix;
+    }
+    if (widget.voyage.prix > 0) return widget.voyage.prix;
+    if (widget.voyage.tarifs.isEmpty) return 0;
+    return widget.voyage.tarifs
+        .map((t) => t.prix)
+        .reduce((a, b) => a > b ? a : b);
+  }
+
   int get _requiredPlaces {
     if (_isVenteCaissier) {
       if (_selectedClient == null) return 0;
@@ -568,7 +594,7 @@ class _ReservationFormScreenState extends State<ReservationFormScreen> {
 
   void _syncPlacesAndMontant() {
     _placesController.text = _requiredPlaces.toString();
-    final total = _montantTotal;
+    final total = _montantTotalDu;
     if (total > 0) {
       _montantPayeController.text = total.toStringAsFixed(0);
     } else {
@@ -825,7 +851,7 @@ class _ReservationFormScreenState extends State<ReservationFormScreen> {
       );
       return;
     }
-    final totalDu = _montantTotal;
+    final totalDu = _montantTotalDu;
     if (totalDu <= 0) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1084,6 +1110,77 @@ class _ReservationFormScreenState extends State<ReservationFormScreen> {
     }
   }
 
+  Widget _buildResumeMontants({bool compact = false}) {
+    final billets = _montantBillets;
+    final majoration = _montantMajorationElectronique;
+    final total = _montantTotalDu;
+    final afficheFraisTransaction = _isPaiementElectronique;
+
+    if (billets <= 0 && total <= 0) {
+      return Text(
+        'Tarifs : renseigne ta catégorie de siège pour afficher le total.',
+        style: TextStyle(
+          color: Colors.white.withValues(alpha: compact ? 0.55 : 0.7),
+          fontSize: compact ? 12 : 13,
+        ),
+      );
+    }
+
+    final lines = <Widget>[
+      if (!compact || majoration <= 0)
+        Text(
+          'Billets : ${billets.toStringAsFixed(0)} $_suffixeDevise',
+          style: TextStyle(
+            color: Colors.white.withValues(alpha: 0.7),
+            fontSize: compact ? 12 : 13,
+          ),
+        ),
+      if (afficheFraisTransaction && majoration > 0) ...[
+        if (!compact) const SizedBox(height: 4),
+        Text(
+          'Frais de transaction '
+          '($_requiredPlaces × ${widget.voyage.montAddPaieElectronique.toStringAsFixed(0)} '
+          '$_suffixeDeviseMajoration) : ${majoration.toStringAsFixed(0)} $_suffixeDeviseMajoration',
+          style: TextStyle(
+            color: Colors.orange.shade200,
+            fontSize: compact ? 11 : 12,
+          ),
+        ),
+        if (!compact)
+          Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: PaymentFeesLearnMoreText(
+              prefix: 'Inclus dans le total affiché (par passager).',
+              voyage: widget.voyage,
+              isCaissier: _isVenteCaissier,
+            ),
+          ),
+      ],
+      SizedBox(height: compact ? 4 : 6),
+      Text(
+        'Total affiché : ${total.toStringAsFixed(0)} $_suffixeDevise',
+        style: TextStyle(
+          color: const Color(0xFF00E676),
+          fontWeight: FontWeight.w700,
+          fontSize: compact ? 13 : 14,
+        ),
+      ),
+      if (afficheFraisTransaction && (compact || majoration <= 0)) ...[
+        SizedBox(height: compact ? 2 : 4),
+        PaymentFeesLearnMoreText(
+          voyage: widget.voyage,
+          isCaissier: _isVenteCaissier,
+          fontSize: compact ? 11 : 12,
+        ),
+      ],
+    ];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: lines,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -1117,12 +1214,7 @@ class _ReservationFormScreenState extends State<ReservationFormScreen> {
               ),
             ),
             const SizedBox(height: 6),
-            Text(
-              _montantTotal > 0
-                  ? 'Total dû (selon sièges) : ${_montantTotal.toStringAsFixed(0)} $_suffixeDevise'
-                  : 'Tarifs : renseigne ta catégorie de siège pour afficher le total.',
-              style: const TextStyle(color: Colors.white70),
-            ),
+            _buildResumeMontants(),
             if (_isVenteCaissier) ...[
               _buildCaissierClientSection(),
               const SizedBox(height: 16),
@@ -1299,28 +1391,6 @@ class _ReservationFormScreenState extends State<ReservationFormScreen> {
                 ),
               ],
               const SizedBox(height: 12),
-              _buildField(
-                controller: _montantPayeController,
-                label: 'Montant payé',
-                keyboardType: TextInputType.number,
-                validator: (v) {
-                  final value = double.tryParse((v ?? '').trim()) ?? 0;
-                  final total = _montantTotal;
-                  if (total <= 0) {
-                    return 'Total indisponible';
-                  }
-                  if (value <= 0 || value > total) {
-                    return '> 0 et ≤ ${total.toStringAsFixed(0)}';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Rappel total: ${_montantTotal.toStringAsFixed(0)} $_suffixeDevise',
-                style: const TextStyle(color: Color(0xFF00E676)),
-              ),
-              const SizedBox(height: 12),
               DropdownButtonFormField<String>(
                 key: ValueKey<String>('methode_$_methodePaiement'),
                 initialValue: _isCaissier
@@ -1328,7 +1398,7 @@ class _ReservationFormScreenState extends State<ReservationFormScreen> {
                               _methodePaiement == 'CARTE_BANCAIRE' ||
                               _methodePaiement == 'CASH')
                           ? _methodePaiement
-                          : 'MOBILE_MONEY'
+                          : 'CASH'
                     : (_methodePaiement == 'MOBILE_MONEY' ||
                           _methodePaiement == 'CARTE_BANCAIRE')
                     ? _methodePaiement
@@ -1357,6 +1427,25 @@ class _ReservationFormScreenState extends State<ReservationFormScreen> {
                       ],
                 onChanged: _handlePaymentMethodChanged,
                 decoration: _inputDecoration('Méthode de paiement'),
+              ),
+              const SizedBox(height: 8),
+              _buildResumeMontants(compact: true),
+              const SizedBox(height: 12),
+              _buildField(
+                controller: _montantPayeController,
+                label: 'Montant payé',
+                keyboardType: TextInputType.number,
+                validator: (v) {
+                  final value = double.tryParse((v ?? '').trim()) ?? 0;
+                  final total = _montantTotalDu;
+                  if (total <= 0) {
+                    return 'Total indisponible';
+                  }
+                  if (value <= 0 || value > total) {
+                    return '> 0 et ≤ ${total.toStringAsFixed(0)}';
+                  }
+                  return null;
+                },
               ),
               const SizedBox(height: 20),
             ],

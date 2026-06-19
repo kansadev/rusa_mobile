@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shimmer/shimmer.dart';
@@ -49,6 +51,11 @@ class _AllVoyagesScreenState extends State<AllVoyagesScreen> {
   String? _clientsLoadError;
   bool _loadingClients = false;
 
+  bool _showSearchBar = false;
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
+  Timer? _searchDebounce;
+
   @override
   void initState() {
     super.initState();
@@ -85,12 +92,16 @@ class _AllVoyagesScreenState extends State<AllVoyagesScreen> {
   }
 
   Future<VoyagePagedResponse?> _fetchVoyagesPage(int pageNumber) async {
+    final searchTerm = _searchQuery.trim().isNotEmpty
+        ? _searchQuery.trim()
+        : null;
     final common = (
       pageNumber: pageNumber,
       pageSize: _pageSize,
       periode: _periode.apiValue,
       sortBy: 'dateDepart',
-      sortDescending: false,
+      sortDescending: true,
+      searchTerm: searchTerm,
     );
 
     if (_isCaissier) {
@@ -107,6 +118,7 @@ class _AllVoyagesScreenState extends State<AllVoyagesScreen> {
         periode: common.periode,
         sortBy: common.sortBy,
         sortDescending: common.sortDescending,
+        searchTerm: common.searchTerm,
       );
     }
 
@@ -116,6 +128,59 @@ class _AllVoyagesScreenState extends State<AllVoyagesScreen> {
       periode: common.periode,
       sortBy: common.sortBy,
       sortDescending: common.sortDescending,
+      searchTerm: common.searchTerm,
+    );
+  }
+
+  void _scheduleSearchReload() {
+    _searchDebounce?.cancel();
+    _searchDebounce = Timer(const Duration(milliseconds: 450), () {
+      if (mounted) _loadVoyages(reset: true);
+    });
+  }
+
+  void _toggleSearchBar() {
+    setState(() {
+      _showSearchBar = !_showSearchBar;
+      if (!_showSearchBar) {
+        _searchController.clear();
+        _searchQuery = '';
+      }
+    });
+    if (!_showSearchBar) {
+      _loadVoyages(reset: true);
+    }
+  }
+
+  Widget _buildSearchBar() {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeInOut,
+      height: _showSearchBar ? 60 : 0,
+      margin: EdgeInsets.fromLTRB(16, 0, 16, _showSearchBar ? 12 : 0),
+      child: _showSearchBar
+          ? Container(
+              decoration: BoxDecoration(
+                color: const Color(0xFF222222),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: TextField(
+                controller: _searchController,
+                onChanged: (value) {
+                  setState(() => _searchQuery = value);
+                  _scheduleSearchReload();
+                },
+                style: const TextStyle(color: Colors.white),
+                decoration: const InputDecoration(
+                  hintText: 'Entrez la ville de départ / d\'arrivée',
+                  hintStyle: TextStyle(color: Colors.white38),
+                  prefixIcon: Icon(Icons.search, color: Colors.white54),
+                  border: InputBorder.none,
+                  contentPadding: EdgeInsets.symmetric(vertical: 15),
+                ),
+              ),
+            )
+          : null,
     );
   }
 
@@ -265,6 +330,8 @@ class _AllVoyagesScreenState extends State<AllVoyagesScreen> {
 
   @override
   void dispose() {
+    _searchDebounce?.cancel();
+    _searchController.dispose();
     _scrollController.dispose();
     super.dispose();
   }
@@ -339,7 +406,9 @@ class _AllVoyagesScreenState extends State<AllVoyagesScreen> {
 
       setState(() {
         final more = VoyagePeriodeFilter.apply(response.data, _periode);
-        _voyages = [..._voyages, ...more];
+        _voyages = VoyagePeriodeFilter.sortByDateDepartRecentFirst(
+          [..._voyages, ...more],
+        );
         _hasNextPage = response.hasNextPage;
         _nextPageNumber++;
         _loadingMore = false;
@@ -388,19 +457,29 @@ class _AllVoyagesScreenState extends State<AllVoyagesScreen> {
           ),
         ),
         centerTitle: true,
+        actions: [
+          IconButton(
+            icon: Icon(
+              _showSearchBar ? Icons.close : Icons.search_rounded,
+              color: Colors.white,
+            ),
+            onPressed: _toggleSearchBar,
+          ),
+        ],
       ),
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _buildClientBanner(),
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
             child: VoyagePeriodeSelector(
               selected: _periode,
               onPeriodeChanged: _onPeriodeChanged,
               showVoirTout: false,
             ),
           ),
+          _buildSearchBar(),
           Expanded(
             child: _isLoading
                 ? _buildShimmerLoading()
@@ -515,7 +594,9 @@ class _AllVoyagesScreenState extends State<AllVoyagesScreen> {
                   ),
                   const SizedBox(height: 20),
                   Text(
-                    'Aucun voyage prévu pour cette ${_periode.label}. Cliquez sur "Cette sem." pour voir le programme de la semaine.',
+                    _searchQuery.trim().isEmpty
+                        ? 'Aucun voyage prévu pour cette ${_periode.label}. Cliquez sur "Cette sem." pour voir le programme de la semaine.'
+                        : 'Aucun résultat pour cette recherche',
                     textAlign: TextAlign.center,
                     style: GoogleFonts.poppins(
                       color: Colors.white54,

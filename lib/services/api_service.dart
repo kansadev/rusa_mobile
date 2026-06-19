@@ -38,12 +38,13 @@ class ApiService {
       'https://uat-rusatravel.asdc-rdc.org/api';
   static const String _productionBaseUrl =
       'https://prod-rusatravel.asdc-rdc.org/api';
+      
   static const ApiEnvironment _defaultEnvironment = ApiEnvironment.dev;
   static String? _lastAuthErrorMessage;
 
   /// Choix manuel de l'environnement:
   /// 0 = dev, 1 = staging, 2 = production
-  static const int _environmentIndex = 2;
+  static const int _environmentIndex = 1;
 
   // Méthode pour déterminer l'URL de base en fonction de l'environnement
   static String get baseUrl => _getBaseUrl();
@@ -149,11 +150,12 @@ class ApiService {
     return fallback;
   }
 
+  static String? readApiErrorMessage(Map<String, dynamic>? map) {
+    if (map == null) return null;
+    return _readApiErrorMessage(map);
+  }
+
   static String? _readApiErrorMessage(Map<String, dynamic> map) {
-    for (final key in const ['message', 'detail', 'title', 'error']) {
-      final value = map[key]?.toString().trim();
-      if (value != null && value.isNotEmpty) return value;
-    }
     final errors = map['errors'];
     if (errors is Map) {
       for (final entry in errors.entries) {
@@ -166,6 +168,10 @@ class ApiService {
           if (text != null && text.isNotEmpty) return text;
         }
       }
+    }
+    for (final key in const ['message', 'detail', 'title', 'error']) {
+      final value = map[key]?.toString().trim();
+      if (value != null && value.isNotEmpty) return value;
     }
     return null;
   }
@@ -545,61 +551,128 @@ class ApiService {
 
   // ========== MÉTHODES CLIENT ==========
 
+  static String? _nullableTrim(String? value) {
+    final trimmed = value?.trim();
+    if (trimmed == null || trimmed.isEmpty) return null;
+    return trimmed;
+  }
+
+  static Map<String, dynamic> _clientRegisterPayload({
+    required String nomClient,
+    String? emailClient,
+    required String telephone,
+    String? adresseClient,
+    required String genreClient,
+    String? province,
+    String? ville,
+    String? commune,
+    String? avenue,
+    String? numero,
+    required bool acceptTerms,
+    required bool subscribeNewsletter,
+    required bool marketingConsent,
+  }) {
+    final payload = <String, dynamic>{
+      'nomClient': nomClient.trim(),
+      'telephone': telephone.trim(),
+      'genreClient': genreClient.trim(),
+      'acceptTerms': acceptTerms,
+      'subscribeNewsletter': subscribeNewsletter,
+      'marketingConsent': marketingConsent,
+    };
+
+    void addOptional(String key, String? value) {
+      final normalized = _nullableTrim(value);
+      if (normalized != null) {
+        payload[key] = normalized;
+      }
+    }
+
+    addOptional('emailClient', emailClient);
+    addOptional('adresseClient', adresseClient);
+    addOptional('province', province);
+    addOptional('ville', ville);
+    addOptional('commune', commune);
+    addOptional('avenue', avenue);
+    addOptional('numero', numero);
+
+    return payload;
+  }
+
+  static int _registerClientIdFromBody(Map<String, dynamic> body) {
+    final data = body['data'];
+    if (data is Map) {
+      final id = _asInt(data['idClient']);
+      if (id > 0) return id;
+    }
+    return _asInt(body['idClient']);
+  }
+
   static Future<http.Response> _postClientRegister({
     required String nomClient,
-    required String emailClient,
+    String? emailClient,
     required String telephone,
-    required String adresseClient,
+    String? adresseClient,
     required String genreClient,
-    required String province,
-    required String ville,
-    required String commune,
-    required String avenue,
-    required String numero,
+    String? province,
+    String? ville,
+    String? commune,
+    String? avenue,
+    String? numero,
     bool acceptTerms = true,
     bool subscribeNewsletter = true,
     bool marketingConsent = true,
   }) async {
     final headers = await _getHeaders(requiresAuth: false);
-    return http.post(
+    final payload = _clientRegisterPayload(
+      nomClient: nomClient,
+      emailClient: emailClient,
+      telephone: telephone,
+      adresseClient: adresseClient,
+      genreClient: genreClient,
+      province: province,
+      ville: ville,
+      commune: commune,
+      avenue: avenue,
+      numero: numero,
+      acceptTerms: acceptTerms,
+      subscribeNewsletter: subscribeNewsletter,
+      marketingConsent: marketingConsent,
+    );
+    debugPrint('[Client/register] URL: $baseUrl/Client/register');
+    debugPrint('[Client/register] Headers: ${headers.keys.join(', ')}');
+    debugPrint('[Client/register] Payload: ${jsonEncode(payload)}');
+
+    final response = await http.post(
       Uri.parse('$baseUrl/Client/register'),
       headers: headers,
-      body: jsonEncode({
-        'nomClient': nomClient,
-        'emailClient': emailClient,
-        'telephone': telephone,
-        'adresseClient': adresseClient,
-        'genreClient': genreClient,
-        'province': province,
-        'ville': ville,
-        'commune': commune,
-        'avenue': avenue,
-        'numero': numero,
-        'acceptTerms': acceptTerms,
-        'subscribeNewsletter': subscribeNewsletter,
-        'marketingConsent': marketingConsent,
-      }),
+      body: jsonEncode(payload),
     );
+
+    debugPrint('[Client/register] Status: ${response.statusCode}');
+    debugPrint('[Client/register] Response: ${response.body}');
+
+    return response;
   }
 
   // Enregistrer un nouveau client
-  static Future<Map<String, dynamic>?> registerClient({
+  static Future<RegisterClientResult> registerClient({
     required String nomClient,
-    required String emailClient,
+    String? emailClient,
     required String telephone,
-    required String adresseClient,
+    String? adresseClient,
     required String genreClient,
-    required String province,
-    required String ville,
-    required String commune,
-    required String avenue,
-    required String numero,
+    String? province,
+    String? ville,
+    String? commune,
+    String? avenue,
+    String? numero,
     bool acceptTerms = true,
     bool subscribeNewsletter = true,
     bool marketingConsent = true,
   }) async {
     try {
-      final response = await _postClientRegister(
+      final outcome = await registerClientWithStatus(
         nomClient: nomClient,
         emailClient: emailClient,
         telephone: telephone,
@@ -616,19 +689,18 @@ class ApiService {
       );
 
       debugPrint('Requête inscription client: $baseUrl/Client/register');
-      debugPrint('Status code: ${response.statusCode}');
-      debugPrint('Réponse inscription: ${response.body}');
-
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        final jsonResponse = json.decode(response.body);
-        if (jsonResponse is Map<String, dynamic>) {
-          return jsonResponse;
-        }
+      debugPrint('Status code: ${outcome.statusCode}');
+      if (outcome.body != null) {
+        debugPrint('Réponse inscription: ${jsonEncode(outcome.body)}');
       }
-      return null;
+
+      return RegisterClientResult(
+        statusCode: outcome.statusCode,
+        body: outcome.body,
+      );
     } catch (e) {
       debugPrint('Erreur lors de l\'inscription client: $e');
-      return null;
+      return const RegisterClientResult(statusCode: 0);
     }
   }
 
@@ -636,15 +708,15 @@ class ApiService {
   static Future<({int statusCode, Map<String, dynamic>? body})>
   registerClientWithStatus({
     required String nomClient,
-    required String emailClient,
+    String? emailClient,
     required String telephone,
-    required String adresseClient,
+    String? adresseClient,
     required String genreClient,
-    required String province,
-    required String ville,
-    required String commune,
-    required String avenue,
-    required String numero,
+    String? province,
+    String? ville,
+    String? commune,
+    String? avenue,
+    String? numero,
     bool acceptTerms = true,
     bool subscribeNewsletter = false,
     bool marketingConsent = false,
@@ -680,6 +752,60 @@ class ApiService {
       debugPrint('Erreur inscription client (caisse): $e');
       return (statusCode: 0, body: null);
     }
+  }
+
+  /// Mot de passe par défaut attribué à l'inscription client.
+  static const String defaultClientPassword = '123456';
+
+  /// Indique si la réponse `POST /Client/register` est un succès.
+  static bool isRegisterClientSuccess(Map<String, dynamic>? body) {
+    if (body == null) return false;
+    if (body['success'] == false) return false;
+    return _registerClientIdFromBody(body) > 0;
+  }
+
+  /// Extrait le client créé (`data` imbriqué ou racine).
+  static Client? parseRegisteredClient(Map<String, dynamic> body) {
+    try {
+      final data = body['data'];
+      if (data is Map<String, dynamic>) {
+        return _clientFromRegisterData(data);
+      }
+      if (data is Map) {
+        return _clientFromRegisterData(Map<String, dynamic>.from(data));
+      }
+      if (_asInt(body['idClient']) > 0) {
+        return _clientFromRegisterData(body);
+      }
+    } catch (e) {
+      debugPrint('parseRegisteredClient: $e');
+    }
+    return null;
+  }
+
+  static Client _clientFromRegisterData(Map<String, dynamic> data) {
+    final id = _asInt(data['idClient']);
+    if (id <= 0) {
+      throw FormatException('idClient manquant dans la réponse register');
+    }
+    return Client(
+      idClient: id,
+      nomClient: data['nomClient']?.toString() ?? '',
+      telephone: data['telephone']?.toString() ?? '',
+      emailClient: data['emailClient']?.toString() ?? '',
+      genreClient: data['genreClient']?.toString() ?? '',
+      adresseClient: data['adresseClient']?.toString(),
+      statut: data['statut'] == true,
+      isActif: data['isActif'] == true,
+      usages: const [],
+    );
+  }
+
+  static int _asInt(dynamic value) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    if (value is String) return int.tryParse(value.trim()) ?? 0;
+    return 0;
   }
 
   // Récupérer le profil du client connecté
@@ -2957,5 +3083,72 @@ class ApiService {
       }
     }
     return null;
+  }
+}
+
+/// Résultat de `POST /Client/register` (succès, erreur, limitation 429).
+class RegisterClientResult {
+  final int statusCode;
+  final Map<String, dynamic>? body;
+
+  const RegisterClientResult({
+    required this.statusCode,
+    this.body,
+  });
+
+  bool get isSuccess =>
+      (statusCode == 200 || statusCode == 201) &&
+      ApiService.isRegisterClientSuccess(body);
+
+  Client? get registeredClient =>
+      body != null ? ApiService.parseRegisteredClient(body!) : null;
+
+  bool get isRateLimited => statusCode == 429;
+
+  String? get welcomeMessage {
+    final data = body?['data'];
+    if (data is Map && data['welcomeMessage'] != null) {
+      return data['welcomeMessage'].toString();
+    }
+    return null;
+  }
+
+  String? get apiMessage {
+    final validation = ApiService.readApiErrorMessage(body);
+    if (validation != null && validation.isNotEmpty) return validation;
+    final raw = body?['message'] ?? body?['title'] ?? body?['detail'];
+    if (raw == null) return null;
+    final text = raw.toString().trim();
+    return text.isEmpty ? null : text;
+  }
+
+  int? get retryAfterSeconds {
+    final raw = body?['retryAfter'];
+    if (raw is int) return raw;
+    if (raw is num) return raw.toInt();
+    if (raw is String) return int.tryParse(raw.trim());
+    return null;
+  }
+
+  String get userMessage {
+    if (isRateLimited) {
+      final base = apiMessage ??
+          'Trop de tentatives. Veuillez réessayer plus tard.';
+      final seconds = retryAfterSeconds;
+      if (seconds == null || seconds <= 0) return base;
+      if (seconds < 60) {
+        return '$base Réessayez dans $seconds s.';
+      }
+      final minutes = (seconds / 60).ceil();
+      return '$base Réessayez dans environ $minutes min.';
+    }
+    if (isSuccess) {
+      final data = body?['data'];
+      if (data is Map && data['message'] != null) {
+        return data['message'].toString();
+      }
+      return apiMessage ?? 'Inscription réussie.';
+    }
+    return apiMessage ?? 'Échec de l\'inscription.';
   }
 }

@@ -8,7 +8,10 @@ import 'package:rusa/widgets/CaissierNavigationWrapper.dart';
 import 'package:rusa/widgets/MyNavigationWrapper.dart';
 
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key});
+  const LoginScreen({super.key, this.registrationSuccessMessage});
+
+  /// Message affiché une fois après redirection depuis l'inscription.
+  final String? registrationSuccessMessage;
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -24,6 +27,24 @@ class _LoginScreenState extends State<LoginScreen> {
   final _passwordController = TextEditingController();
   bool _isLoading = false;
   bool _obscurePassword = true;
+
+  @override
+  void initState() {
+    super.initState();
+    final message = widget.registrationSuccessMessage?.trim();
+    if (message != null && message.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(message),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 5),
+          ),
+        );
+      });
+    }
+  }
 
   @override
   void dispose() {

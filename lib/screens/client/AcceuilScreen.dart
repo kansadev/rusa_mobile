@@ -31,6 +31,7 @@ class _SearchTripScreenState extends State<SearchTripScreen> {
   String? _userPhotoUrl;
   List<Voyage> _voyages = [];
   bool _isLoadingVoyages = false;
+  String? _voyagesLoadError;
   VoyagePeriode _periode = VoyagePeriode.jour;
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
@@ -341,12 +342,22 @@ class _SearchTripScreenState extends State<SearchTripScreen> {
         searchTerm: serverTerm,
         periode: _periode.apiValue,
         sortBy: 'dateDepart',
-        sortDescending: false,
+        sortDescending: true,
       );
 
       if (!mounted) return;
 
-      final raw = response?.data ?? [];
+      if (response == null) {
+        setState(() {
+          _voyages = [];
+          _voyagesLoadError =
+              'Impossible de charger les voyages pour le moment. Réessayez plus tard.';
+          _isLoadingVoyages = false;
+        });
+        return;
+      }
+
+      final raw = response.data;
       var list = VoyagePeriodeFilter.apply(raw, _periode);
 
       // Filtre local : ne garder que les voyages dont la ville de départ
@@ -358,16 +369,23 @@ class _SearchTripScreenState extends State<SearchTripScreen> {
             .toList();
       }
 
+      list = VoyagePeriodeFilter.sortByDateDepartRecentFirst(list);
+
       await CacheService.saveVoyages(list);
 
       setState(() {
         _voyages = list;
+        _voyagesLoadError = null;
         _isLoadingVoyages = false;
       });
     } catch (e) {
       debugPrint('Erreur chargement voyages accueil: $e');
       if (mounted) {
-        setState(() => _isLoadingVoyages = false);
+        setState(() {
+          _isLoadingVoyages = false;
+          _voyagesLoadError =
+              'Erreur lors du chargement des voyages. Tirez pour réessayer.';
+        });
       }
     }
   }
@@ -519,11 +537,14 @@ class _SearchTripScreenState extends State<SearchTripScreen> {
                                   const SizedBox(height: 12),
                                   Center(
                                     child: Text(
-                                      _searchQuery.trim().isEmpty
-                                          ? 'Oups ! Aucun  voyage prévu pour ${_periode.label}. Cliquez sur "Cette sem." pour voir le programme de la semaine.'
-                                          : 'Aucun résultat pour cette recherche',
-                                      style: const TextStyle(
-                                        color: Colors.white54,
+                                      _voyagesLoadError ??
+                                          (_searchQuery.trim().isEmpty
+                                              ? 'Oups ! Aucun  voyage prévu pour ${_periode.label}. Cliquez sur "Cette sem." pour voir le programme de la semaine.'
+                                              : 'Aucun résultat pour cette recherche'),
+                                      style: TextStyle(
+                                        color: _voyagesLoadError != null
+                                            ? Colors.orange.shade200
+                                            : Colors.white54,
                                         fontSize: 16,
                                       ),
                                       textAlign: TextAlign.center,

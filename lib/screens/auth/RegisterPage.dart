@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:rusa/screens/auth/LoginScreen.dart';
+import 'package:rusa/screens/auth/RegisterRateLimitScreen.dart';
 import 'package:rusa/services/api_service.dart';
-import 'package:rusa/widgets/MyNavigationWrapper.dart';
 
 class RegisterPage extends StatefulWidget {
   const RegisterPage({super.key});
@@ -33,12 +35,27 @@ class _RegisterPageState extends State<RegisterPage> {
   Future<void> _submitRegistration() async {
     if (_isSubmitting) return;
 
-    // Seuls le nom et le téléphone sont obligatoires.
-    if (_nomClientController.text.trim().isEmpty ||
-        _telephoneController.text.trim().isEmpty) {
+    // Nom, téléphone et adresse (min. 5 caractères) sont obligatoires côté API.
+    final nom = _nomClientController.text.trim();
+    final telephone = _telephoneController.text.trim();
+    final adresse = _adresseClientController.text.trim();
+
+    if (nom.isEmpty || telephone.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Le nom et le numéro de téléphone sont obligatoires.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    if (adresse.length < 5) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            "L'adresse est obligatoire et doit contenir au moins 5 caractères.",
+          ),
           backgroundColor: Colors.red,
         ),
       );
@@ -50,17 +67,10 @@ class _RegisterPageState extends State<RegisterPage> {
       final genre = _selectedGenre == 'Femme' ? 'F' : 'M';
       final result = await ApiService.registerClient(
         nomClient: _nomClientController.text.trim(),
-        emailClient: _emailClientController.text.trim(),
+        emailClient: _emailClientController.text,
         telephone: _telephoneController.text.trim(),
-        adresseClient: _adresseClientController.text.trim(),
+        adresseClient: _adresseClientController.text,
         genreClient: genre,
-        // Champs d'adresse détaillée optionnels : le client pourra les
-        // compléter plus tard depuis son profil.
-        province: '',
-        ville: '',
-        commune: '',
-        avenue: '',
-        numero: '',
         acceptTerms: true,
         subscribeNewsletter: true,
         marketingConsent: true,
@@ -68,19 +78,37 @@ class _RegisterPageState extends State<RegisterPage> {
 
       if (!mounted) return;
 
-      if (result != null) {
-        await _showDefaultPasswordDialog();
+      if (result.isSuccess) {
+        final welcome = result.welcomeMessage;
+        await _showDefaultPasswordDialog(welcomeMessage: welcome);
         if (!mounted) return;
+
         Navigator.pushAndRemoveUntil(
           context,
-          MaterialPageRoute(builder: (context) => const MyNavigationWrapper()),
+          MaterialPageRoute(
+            builder: (context) => const LoginScreen(
+              registrationSuccessMessage:
+                  'Compte créé. Connectez-vous avec votre téléphone et le mot de passe affiché.',
+            ),
+          ),
           (route) => false,
+        );
+      } else if (result.isRateLimited) {
+        await Navigator.of(context).push<void>(
+          MaterialPageRoute(
+            fullscreenDialog: true,
+            builder: (context) => RegisterRateLimitScreen(
+              retryAfterSeconds: result.retryAfterSeconds ?? 600,
+              message: result.apiMessage,
+            ),
+          ),
         );
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Échec de l\'inscription'),
+          SnackBar(
+            content: Text(result.userMessage),
             backgroundColor: Colors.red,
+            duration: const Duration(seconds: 4),
           ),
         );
       }
@@ -89,7 +117,26 @@ class _RegisterPageState extends State<RegisterPage> {
     }
   }
 
-  Future<void> _showDefaultPasswordDialog() {
+  Future<void> _copyDefaultPassword(BuildContext dialogContext) async {
+    await Clipboard.setData(
+      const ClipboardData(text: ApiService.defaultClientPassword),
+    );
+    if (!dialogContext.mounted) return;
+    ScaffoldMessenger.of(dialogContext).showSnackBar(
+      const SnackBar(
+        content: Text('Mot de passe copié dans le presse-papiers'),
+        backgroundColor: Color(0xFF00E676),
+        duration: Duration(seconds: 2),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  Future<void> _showDefaultPasswordDialog({String? welcomeMessage}) {
+    final intro = welcomeMessage?.trim().isNotEmpty == true
+        ? welcomeMessage!.trim()
+        : 'Votre compte a bien été créé. Votre mot de passe par défaut est :';
+
     return showDialog<void>(
       context: context,
       barrierDismissible: false,
@@ -126,28 +173,41 @@ class _RegisterPageState extends State<RegisterPage> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'Votre compte a bien été créé. Votre mot de passe par défaut est :',
-              style: TextStyle(color: Colors.white70, fontSize: 14),
+            Text(
+              intro,
+              style: const TextStyle(color: Colors.white70, fontSize: 14),
             ),
             const SizedBox(height: 14),
             Center(
               child: Container(
                 padding:
-                    const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 decoration: BoxDecoration(
                   color: Colors.white10,
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(color: const Color(0xFF00E676)),
                 ),
-                child: Text(
-                  '123456',
-                  style: GoogleFonts.poppins(
-                    color: const Color(0xFF00E676),
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 4,
-                  ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      ApiService.defaultClientPassword,
+                      style: GoogleFonts.poppins(
+                        color: const Color(0xFF00E676),
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 4,
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: () => _copyDefaultPassword(ctx),
+                      tooltip: 'Copier le mot de passe',
+                      icon: const Icon(
+                        Icons.copy_rounded,
+                        color: Color(0xFF00E676),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -194,7 +254,7 @@ class _RegisterPageState extends State<RegisterPage> {
                 ),
               ),
               const Text(
-                'Le nom et le téléphone suffisent pour commencer.',
+                'Renseignez vos informations pour créer votre compte.',
                 style: TextStyle(color: Colors.white54),
               ),
               const SizedBox(height: 32),
@@ -217,13 +277,13 @@ class _RegisterPageState extends State<RegisterPage> {
                 keyboardType: TextInputType.emailAddress,
               ),
               _buildRegFieldWithController(
-                'Adresse complète (facultatif)',
+                'Adresse complète *',
                 Icons.home_outlined,
                 _adresseClientController,
               ),
               const Text(
-                '* Champs obligatoires. Vous pourrez compléter les autres '
-                'informations plus tard dans votre profil.',
+                '* Champs obligatoires. L\'adresse doit contenir au moins '
+                '5 caractères.',
                 style: TextStyle(color: Colors.white38, fontSize: 12),
               ),
               const SizedBox(height: 24),

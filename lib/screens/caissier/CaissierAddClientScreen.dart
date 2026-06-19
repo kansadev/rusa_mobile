@@ -65,16 +65,6 @@ class _CaissierAddClientScreenState extends State<CaissierAddClientScreen> {
     return null;
   }
 
-  bool _isSuccess(int status, Map<String, dynamic>? body) {
-    if (status != 200 && status != 201) return false;
-    if (body == null) return true;
-    final s = body['success'];
-    if (s is bool) return s;
-    return body['data'] != null ||
-        body['welcomeMessage'] != null ||
-        body['idClient'] != null;
-  }
-
   Client? _clientFromBody(Map<String, dynamic>? body) {
     if (body == null) return null;
     try {
@@ -99,15 +89,15 @@ class _CaissierAddClientScreenState extends State<CaissierAddClientScreen> {
     try {
       final outcome = await ApiService.registerClientWithStatus(
         nomClient: _nomController.text.trim(),
-        emailClient: _emailController.text.trim(),
+        emailClient: _emailController.text,
         telephone: _telephoneController.text.trim(),
-        adresseClient: _adresseController.text.trim(),
+        adresseClient: _adresseController.text,
         genreClient: _genre,
-        province: _provinceController.text.trim(),
-        ville: _villeController.text.trim(),
-        commune: _communeController.text.trim(),
-        avenue: _avenueController.text.trim(),
-        numero: _numeroController.text.trim(),
+        province: _provinceController.text,
+        ville: _villeController.text,
+        commune: _communeController.text,
+        avenue: _avenueController.text,
+        numero: _numeroController.text,
         acceptTerms: true,
         subscribeNewsletter: false,
         marketingConsent: false,
@@ -116,7 +106,11 @@ class _CaissierAddClientScreenState extends State<CaissierAddClientScreen> {
       if (!mounted) return;
 
       final body = outcome.body;
-      final ok = _isSuccess(outcome.statusCode, body);
+      final result = RegisterClientResult(
+        statusCode: outcome.statusCode,
+        body: body,
+      );
+      final ok = result.isSuccess;
 
       if (ok) {
         final msg =
@@ -145,11 +139,13 @@ class _CaissierAddClientScreenState extends State<CaissierAddClientScreen> {
         return;
       }
 
-      final errText =
-          _messageFromBody(body) ??
-          'Impossible d’enregistrer ce client (vérifiez les données ou un compte existant).';
+      final errText = result.userMessage;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(errText), backgroundColor: Colors.red),
+        SnackBar(
+          content: Text(errText),
+          backgroundColor: result.isRateLimited ? Colors.orange : Colors.red,
+          duration: Duration(seconds: result.isRateLimited ? 6 : 4),
+        ),
       );
     } finally {
       if (mounted) setState(() => _isSubmitting = false);

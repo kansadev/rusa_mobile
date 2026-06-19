@@ -1,5 +1,6 @@
 import 'package:pdf/pdf.dart';
 import 'package:rusa/models/reservation_with_paiement_response.dart';
+import 'package:rusa/models/voyage_model.dart';
 
 /// Données normalisées pour le reçu thermique (widget + PDF).
 class ThermalReceiptViewData {
@@ -12,7 +13,12 @@ class ThermalReceiptViewData {
   final String? nomClient;
   final String? telephoneClient;
   final String? nomAgent;
+  final double montantBillets;
+  final double montantMajorationElectronique;
   final double montant;
+  final String devise;
+  final bool isPaiementElectronique;
+  final double? montAddUnitaire;
   final String methodePaiement;
   final String referenceTransaction;
   final List<ThermalReceiptBilletLine> billets;
@@ -28,7 +34,12 @@ class ThermalReceiptViewData {
     this.nomClient,
     this.telephoneClient,
     this.nomAgent,
+    required this.montantBillets,
+    this.montantMajorationElectronique = 0,
     required this.montant,
+    this.devise = 'FC',
+    this.isPaiementElectronique = false,
+    this.montAddUnitaire,
     required this.methodePaiement,
     required this.referenceTransaction,
     required this.billets,
@@ -38,6 +49,7 @@ class ThermalReceiptViewData {
   factory ThermalReceiptViewData.fromReservationResponse(
     ReservationWithPaiementResponse data, {
     required String passengerFallback,
+    Voyage? voyage,
     DateTime? printedAt,
   }) {
     final reservation = data.reservation;
@@ -49,9 +61,28 @@ class ThermalReceiptViewData {
     final montantPaye = paiement.montantPaye;
     final montantAPaye = paiement.montantAPaye;
     final prixVoyage = reservation.prixVoyage ?? 0;
-    final montant = montantPaye > 0
+    final montantTotal = montantPaye > 0
         ? montantPaye
         : (montantAPaye > 0 ? montantAPaye : prixVoyage);
+
+    final electronic = _isPaiementElectronique(paiement.methodePaiement);
+    final passagers = billetsRaw.length;
+    var majoration = 0.0;
+    double? montAddUnitaire;
+    var devise = 'FC';
+
+    if (voyage != null) {
+      devise = _deviseAffichage(voyage);
+      montAddUnitaire = voyage.montAddPaieElectronique;
+      if (electronic && voyage.hasMajorationPaieElectronique && passagers > 0) {
+        majoration = voyage.majorationPaieElectroniquePour(passagers);
+      }
+    }
+
+    var montantBillets = montantTotal;
+    if (majoration > 0 && montantTotal >= majoration) {
+      montantBillets = montantTotal - majoration;
+    }
 
     return ThermalReceiptViewData(
       idReservation: reservation.idReservation,
@@ -63,7 +94,12 @@ class ThermalReceiptViewData {
       nomClient: reservation.nomClient ?? passengerFallback,
       telephoneClient: reservation.telephoneClient,
       nomAgent: reservation.nomUtilisateur,
-      montant: montant,
+      montantBillets: montantBillets,
+      montantMajorationElectronique: majoration,
+      montant: montantTotal,
+      devise: devise,
+      isPaiementElectronique: electronic,
+      montAddUnitaire: montAddUnitaire,
       methodePaiement: paiement.methodePaiement,
       referenceTransaction: paiement.referenceTransaction,
       billets: billetsRaw
@@ -83,6 +119,43 @@ class ThermalReceiptViewData {
     );
   }
 
+  static bool _isPaiementElectronique(String raw) {
+    switch (raw.trim().toUpperCase()) {
+      case 'MOBILE_MONEY':
+      case 'MOBILE MONEY':
+      case 'CARTE_BANCAIRE':
+      case 'CARTE BANCAIRE':
+        return true;
+      default:
+        return false;
+    }
+  }
+
+  static String _deviseAffichage(Voyage voyage) {
+    final prix = voyage.codeDevisePrix?.trim();
+    if (prix != null && prix.isNotEmpty) return prix;
+    final principale = voyage.codeDevisePrincipale?.trim();
+    if (principale != null && principale.isNotEmpty) return principale;
+    return voyage.deviseMajorationPaieElectronique;
+  }
+
+  int get nombrePassagers => billets.length;
+
+  String _formatMontant(double value) => '${value.toStringAsFixed(0)} $devise';
+
+  String get montantLabel => _formatMontant(montant);
+
+  String get montantBilletsLabel => _formatMontant(montantBillets);
+
+  String get montantMajorationLabel => _formatMontant(montantMajorationElectronique);
+
+  String get majorationDetailLabel {
+    if (montantMajorationElectronique <= 0 || montAddUnitaire == null) {
+      return montantMajorationLabel;
+    }
+    return '${nombrePassagers} x ${montAddUnitaire!.toStringAsFixed(0)} $devise';
+  }
+
   String get routeLabel =>
       '${villeDepart?.trim().isNotEmpty == true ? villeDepart : 'N/A'} → '
       '${villeArrivee?.trim().isNotEmpty == true ? villeArrivee : 'N/A'}';
@@ -90,8 +163,6 @@ class ThermalReceiptViewData {
   String get dateLabel => _formatDate(dateVoyage);
 
   String get heureLabel => _formatTime(heureVoyage);
-
-  String get montantLabel => '${montant.toStringAsFixed(0)} FC';
 
   String get paiementLabel => _formatPaymentMethod(methodePaiement);
 

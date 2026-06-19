@@ -31,6 +31,8 @@ class Voyage {
   final String? nomSite;
   final String villeDepart;
   final String villeArrivee;
+  final double montAddPaieElectronique;
+  final String? codeDeviseMontAddPaieElectronique;
   final List<VoyageTarif> tarifs;
   final List<CategorieSiegeDisponible> repartitionCategorieSiegesDisponible;
   final List<PhotoVehicule> photosVehicules;
@@ -57,6 +59,8 @@ class Voyage {
     this.nomSite,
     required this.villeDepart,
     required this.villeArrivee,
+    this.montAddPaieElectronique = 0,
+    this.codeDeviseMontAddPaieElectronique,
     this.tarifs = const [],
     this.repartitionCategorieSiegesDisponible = const [],
     this.photosVehicules = const [],
@@ -101,6 +105,10 @@ class Voyage {
       nomSite: json['nomSite']?.toString(),
       villeDepart: json['villeDepart'] ?? '',
       villeArrivee: json['villeArrivee'] ?? '',
+      montAddPaieElectronique:
+          (json['montAddPaieElectronique'] ?? 0).toDouble(),
+      codeDeviseMontAddPaieElectronique:
+          json['codeDeviseMontAddPaieElectronique']?.toString(),
       tarifs: (json['tarifs'] as List?)
               ?.map((e) => VoyageTarif.fromJson(Map<String, dynamic>.from(e as Map)))
               .toList() ??
@@ -149,6 +157,8 @@ class Voyage {
       'nomSite': nomSite,
       'villeDepart': villeDepart,
       'villeArrivee': villeArrivee,
+      'montAddPaieElectronique': montAddPaieElectronique,
+      'codeDeviseMontAddPaieElectronique': codeDeviseMontAddPaieElectronique,
       'tarifs': tarifs.map((t) => t.toJson()).toList(),
       'repartitionCategorieSiegesDisponible':
           repartitionCategorieSiegesDisponible.map((r) => r.toJson()).toList(),
@@ -172,6 +182,25 @@ class Voyage {
   int get idVehicule => idBus;
   bool get estActif => statut;
   String get prixFormatted => '${prix.toStringAsFixed(0)} FC';
+
+  /// Devise de la majoration paiement électronique (frais transaction / passager).
+  String get deviseMajorationPaieElectronique {
+    final m = codeDeviseMontAddPaieElectronique?.trim();
+    if (m != null && m.isNotEmpty) return m;
+    final p = codeDevisePrix?.trim();
+    if (p != null && p.isNotEmpty) return p;
+    final principale = codeDevisePrincipale?.trim();
+    if (principale != null && principale.isNotEmpty) return principale;
+    return 'FC';
+  }
+
+  bool get hasMajorationPaieElectronique => montAddPaieElectronique > 0;
+
+  /// Majoration totale = montant unitaire × nombre de passagers.
+  double majorationPaieElectroniquePour(int nombrePassagers) {
+    if (nombrePassagers <= 0 || montAddPaieElectronique <= 0) return 0;
+    return montAddPaieElectronique * nombrePassagers;
+  }
 
   // Méthode pour formater la date et l'heure
   String get dateTimeFormatted {

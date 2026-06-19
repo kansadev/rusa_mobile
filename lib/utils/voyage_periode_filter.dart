@@ -38,6 +38,39 @@ class VoyagePeriodeFilter {
   }
 
   static List<Voyage> apply(List<Voyage> voyages, VoyagePeriode periode) {
-    return voyages.where((v) => matches(v, periode)).toList();
+    return sortByDateDepartRecentFirst(
+      voyages.where((v) => matches(v, periode)).toList(),
+    );
+  }
+
+  /// Date + heure de départ pour le tri.
+  static DateTime? parseDateTimeDepart(Voyage voyage) {
+    final day = parseDateDepartCalendaire(voyage.dateDepart);
+    if (day == null) return null;
+
+    final raw = voyage.heureDepart.trim();
+    if (raw.isEmpty) return day;
+
+    final parts = raw.split(':');
+    if (parts.length >= 2) {
+      final hour = int.tryParse(parts[0]) ?? 0;
+      final minute = int.tryParse(parts[1]) ?? 0;
+      return DateTime(day.year, day.month, day.day, hour, minute);
+    }
+    return day;
+  }
+
+  /// Plus récent en premier (date de départ décroissante).
+  static List<Voyage> sortByDateDepartRecentFirst(List<Voyage> voyages) {
+    final sorted = List<Voyage>.from(voyages);
+    sorted.sort((a, b) {
+      final da = parseDateTimeDepart(a);
+      final db = parseDateTimeDepart(b);
+      if (da == null && db == null) return 0;
+      if (da == null) return 1;
+      if (db == null) return -1;
+      return db.compareTo(da);
+    });
+    return sorted;
   }
 }

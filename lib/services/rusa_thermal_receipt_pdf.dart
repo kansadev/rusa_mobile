@@ -181,32 +181,60 @@ class RusaThermalReceiptPdf {
       crossAxisAlignment: pw.CrossAxisAlignment.start,
       children: [
         pw.Text(
-          'TOTAL:',
+          'RECAPITULATIF:',
           style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold),
         ),
         pw.SizedBox(height: 4),
-        pw.Row(
-          mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-          children: [
-            pw.Text(
-              'Montant:',
-              style: pw.TextStyle(
-                fontSize: 10,
-                fontWeight: pw.FontWeight.bold,
-              ),
-            ),
-            pw.Text(
-              data.montantLabel,
-              style: pw.TextStyle(
-                fontSize: 10,
-                fontWeight: pw.FontWeight.bold,
-              ),
-            ),
-          ],
-        ),
+        _amountRow('Billets:', data.montantBilletsLabel),
+        if (data.montantMajorationElectronique > 0) ...[
+          pw.SizedBox(height: 2),
+          _amountRow(
+            'Frais transaction (${data.majorationDetailLabel}):',
+            data.montantMajorationLabel,
+          ),
+        ],
+        pw.SizedBox(height: 2),
+        _amountRow('Total:', data.montantLabel, bold: true),
+        if (data.isPaiementElectronique) ...[
+          pw.SizedBox(height: 3),
+          pw.Text(
+            'Frais passerelle ~2,5% sur le total (non inclus).',
+            style: const pw.TextStyle(fontSize: 6, color: PdfColors.grey700),
+          ),
+        ],
         pw.SizedBox(height: 5),
         pw.Divider(),
         pw.SizedBox(height: 4),
+      ],
+    );
+  }
+
+  static pw.Widget _amountRow(
+    String label,
+    String value, {
+    bool bold = false,
+  }) {
+    return pw.Row(
+      mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+      crossAxisAlignment: pw.CrossAxisAlignment.start,
+      children: [
+        pw.Expanded(
+          child: pw.Text(
+            label,
+            style: pw.TextStyle(
+              fontSize: 7,
+              fontWeight: bold ? pw.FontWeight.bold : pw.FontWeight.normal,
+            ),
+          ),
+        ),
+        pw.SizedBox(width: 4),
+        pw.Text(
+          value,
+          style: pw.TextStyle(
+            fontSize: 7,
+            fontWeight: bold ? pw.FontWeight.bold : pw.FontWeight.bold,
+          ),
+        ),
       ],
     );
   }

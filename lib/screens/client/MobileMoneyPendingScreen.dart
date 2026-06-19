@@ -10,6 +10,7 @@ import 'package:rusa/services/flexpay_payment_tracker.dart';
 import 'CardPaymentWebViewScreen.dart';
 import 'package:rusa/screens/caissier/CaissierTicketReceiptScreen.dart';
 import 'package:rusa/widgets/app_message.dart';
+import 'package:rusa/widgets/payment_fee_notice.dart';
 
 import 'TicketReceiptScreen.dart';
 
@@ -581,6 +582,14 @@ class _MobileMoneyPendingScreenState extends State<MobileMoneyPendingScreen> {
                         child: const Text('Ouvrir le lien de paiement'),
                       ),
                     ],
+                    const SizedBox(height: 14),
+                    Center(
+                      child: PaymentFeesLearnMoreText(
+                        isCaissier: widget.isVenteCaissier,
+                        fontSize: 12,
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
                     if (!_isTrackingPayment) ...[
                       const SizedBox(height: 16),
                       FilledButton(

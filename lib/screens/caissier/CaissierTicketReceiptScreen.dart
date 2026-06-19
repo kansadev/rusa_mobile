@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:rusa/models/reservation_with_paiement_response.dart';
 import 'package:rusa/models/thermal_receipt_view_data.dart';
+import 'package:rusa/services/api_service.dart';
 import 'package:rusa/services/app_logger.dart';
 import 'package:rusa/services/caissier_billet_loader.dart';
 import 'package:rusa/services/thermal_print_service.dart';
@@ -27,6 +28,8 @@ class _CaissierTicketReceiptScreenState
     extends State<CaissierTicketReceiptScreen> {
   bool _isLoading = true;
   bool _isPrinting = false;
+  bool _autoPrintTriggered = false;
+  bool _printFailed = false;
   String? _error;
   ReservationWithPaiementResponse? _data;
   ThermalReceiptViewData? _receiptViewData;
@@ -41,6 +44,7 @@ class _CaissierTicketReceiptScreenState
     setState(() {
       _isLoading = true;
       _error = null;
+      _printFailed = false;
     });
 
     final response = await CaissierBilletLoader.fetchWhenReady(
@@ -78,14 +82,31 @@ class _CaissierTicketReceiptScreenState
         response.reservation.nomUtilisateur ??
         'N/A';
 
+    final voyage = response.reservation.idVoyage > 0
+        ? await ApiService.getVoyageById(response.reservation.idVoyage)
+        : null;
+
+    if (!mounted) return;
+
     setState(() {
       _isLoading = false;
       _data = response;
       _receiptViewData = ThermalReceiptViewData.fromReservationResponse(
         response,
+        voyage: voyage,
         passengerFallback: passengerFallback,
       );
       _error = null;
+    });
+
+    _scheduleAutoPrint();
+  }
+
+  void _scheduleAutoPrint() {
+    if (_autoPrintTriggered || _receiptViewData == null) return;
+    _autoPrintTriggered = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _printReceipt(closeOnSuccess: true);
     });
   }
 
@@ -97,7 +118,7 @@ class _CaissierTicketReceiptScreenState
     return const [];
   }
 
-  Future<void> _printReceipt() async {
+  Future<void> _printReceipt({bool closeOnSuccess = false}) async {
     final receipt = _receiptViewData;
     if (_isPrinting || receipt == null) return;
 
@@ -107,18 +128,29 @@ class _CaissierTicketReceiptScreenState
       'billets=${receipt.billets.length}',
     );
 
-    setState(() => _isPrinting = true);
+    setState(() {
+      _isPrinting = true;
+      _printFailed = false;
+    });
+
     try {
       final ok = await ThermalPrintService.printReceipt(receipt);
       if (!mounted) return;
+
       if (ok) {
+        if (closeOnSuccess && Navigator.canPop(context)) {
+          Navigator.pop(context);
+          return;
+        }
         _showSnack('Reçu envoyé à l\'imprimante.');
       } else {
+        setState(() => _printFailed = true);
         _showSnack('Échec de l\'impression. Consultez les logs.', isError: true);
       }
     } catch (e, stack) {
       AppLogger.error('[CaissierReceipt] Exception impression', e, stack);
       if (mounted) {
+        setState(() => _printFailed = true);
         _showSnack('Erreur impression: $e', isError: true);
       }
     } finally {
@@ -143,12 +175,12 @@ class _CaissierTicketReceiptScreenState
         backgroundColor: const Color(0xFF121212),
         elevation: 0,
         leading: IconButton(
-          onPressed: () => Navigator.pop(context),
+          onPressed: _isPrinting ? null : () => Navigator.pop(context),
           icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white),
         ),
-        title: const Text(
-          'Reçu caisse',
-          style: TextStyle(color: Colors.white, fontSize: 18),
+        title: Text(
+          _isPrinting ? 'Impression...' : 'Reçu caisse',
+          style: const TextStyle(color: Colors.white, fontSize: 18),
         ),
       ),
       body: SafeArea(
@@ -191,6 +223,12 @@ class _CaissierTicketReceiptScreenState
               )
             : Column(
                 children: [
+                  if (_isPrinting)
+                    const LinearProgressIndicator(
+                      minHeight: 3,
+                      color: Color(0xFF00E676),
+                      backgroundColor: Color(0xFF2A2A2A),
+                    ),
                   Expanded(
                     child: Center(
                       child: SingleChildScrollView(
@@ -201,42 +239,34 @@ class _CaissierTicketReceiptScreenState
                       ),
                     ),
                   ),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
-                    child: SizedBox(
-                      width: double.infinity,
-                      height: 52,
-                      child: FilledButton.icon(
-                        onPressed: (_isPrinting || _receiptViewData == null)
-                            ? null
-                            : _printReceipt,
-                        icon: _isPrinting
-                            ? const SizedBox(
-                                width: 20,
-                                height: 20,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: Colors.black,
-                                ),
-                              )
-                            : const Icon(Icons.print_outlined),
-                        label: Text(
-                          _isPrinting ? 'Impression...' : 'Imprimer',
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w700,
-                            fontSize: 15,
+                  if (_printFailed)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
+                      child: SizedBox(
+                        width: double.infinity,
+                        height: 52,
+                        child: FilledButton.icon(
+                          onPressed: (_isPrinting || _receiptViewData == null)
+                              ? null
+                              : () => _printReceipt(closeOnSuccess: true),
+                          icon: const Icon(Icons.print_outlined),
+                          label: const Text(
+                            'Réimprimer',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w700,
+                              fontSize: 15,
+                            ),
                           ),
-                        ),
-                        style: FilledButton.styleFrom(
-                          backgroundColor: const Color(0xFF00E676),
-                          foregroundColor: Colors.black,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14),
+                          style: FilledButton.styleFrom(
+                            backgroundColor: const Color(0xFF00E676),
+                            foregroundColor: Colors.black,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
                           ),
                         ),
                       ),
                     ),
-                  ),
                 ],
               ),
       ),

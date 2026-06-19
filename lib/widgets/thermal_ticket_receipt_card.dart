@@ -192,7 +192,7 @@ class ThermalTicketReceiptCard extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text(
-          'TOTAL:',
+          'RECAPITULATIF:',
           style: TextStyle(
             fontSize: 12,
             fontWeight: FontWeight.bold,
@@ -200,30 +200,52 @@ class ThermalTicketReceiptCard extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 4),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            const Text(
-              'Montant:',
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.bold,
-                color: Colors.black,
-              ),
-            ),
-            Text(
-              data.montantLabel,
-              style: const TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.bold,
-                color: Colors.black,
-              ),
-            ),
-          ],
-        ),
+        _amountRow('Billets:', data.montantBilletsLabel),
+        if (data.montantMajorationElectronique > 0) ...[
+          const SizedBox(height: 2),
+          _amountRow('Frais transaction (${data.majorationDetailLabel}):',
+              data.montantMajorationLabel),
+        ],
+        const SizedBox(height: 2),
+        _amountRow('Total:', data.montantLabel, bold: true),
+        if (data.isPaiementElectronique) ...[
+          const SizedBox(height: 4),
+          const Text(
+            'Frais passerelle ~2,5% sur le total (non inclus).',
+            style: TextStyle(fontSize: 8, color: Colors.black54, height: 1.3),
+          ),
+        ],
         const SizedBox(height: 5),
         const Divider(color: Colors.black38, height: 1),
         const SizedBox(height: 4),
+      ],
+    );
+  }
+
+  Widget _amountRow(String label, String value, {bool bold = false}) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: bold ? FontWeight.bold : FontWeight.normal,
+              color: Colors.black87,
+            ),
+          ),
+        ),
+        const SizedBox(width: 6),
+        Text(
+          value,
+          style: TextStyle(
+            fontSize: 10,
+            fontWeight: bold ? FontWeight.bold : FontWeight.w600,
+            color: Colors.black,
+          ),
+        ),
       ],
     );
   }
