@@ -477,7 +477,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     height: 48,
                     child: OutlinedButton.icon(
                       onPressed: _client?.id != null && _client!.id > 0
-                          ? () => AccountDeletionHelper.requestDeletion(
+                          ? () => AccountDeletionHelper.openDeletionPage(
                                 context,
                                 userId: _client!.id,
                               )

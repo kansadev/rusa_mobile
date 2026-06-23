@@ -351,7 +351,7 @@ class _CaissierProfileScreenState extends State<CaissierProfileScreen> {
               height: 48,
               child: OutlinedButton.icon(
                 onPressed: _auth != null && _auth!.utilisateur.idUtilisateur > 0
-                    ? () => AccountDeletionHelper.requestDeletion(
+                    ? () => AccountDeletionHelper.openDeletionPage(
                           context,
                           userId: _auth!.utilisateur.idUtilisateur,
                         )
