@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:rusa/models/reservation_with_paiement_response.dart';
 import 'package:rusa/services/api_service.dart';
+import 'package:rusa/widgets/camera_scanner_shell.dart';
 
 /// Début de la fenêtre côté app : embarquement autorisé au plus tôt avant le départ.
 const Duration _kEmbarquementMaxAvantDepart = Duration(hours: 6);
@@ -442,12 +443,13 @@ class _BilletQrScannerScreenState extends State<BilletQrScannerScreen> {
       body: Column(
         children: [
           Expanded(
-            child: Stack(
-              children: [
-                MobileScanner(
-                  controller: _controller,
-                  onDetect: _onDetectBarcode,
-                ),
+            child: CameraScannerShell(
+              controller: _controller,
+              onDetect: _onDetectBarcode,
+              permissionRationale:
+                  'Pour contrôler les billets à l\'embarquement, l\'application '
+                  'a besoin d\'accéder à la caméra pour lire les QR codes.',
+              overlays: [
                 IgnorePointer(
                   child: Container(color: Colors.black.withValues(alpha: 0.35)),
                 ),

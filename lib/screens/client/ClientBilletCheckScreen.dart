@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:rusa/models/billet_check_response.dart';
 import 'package:rusa/services/api_service.dart';
+import 'package:rusa/widgets/camera_scanner_shell.dart';
 
 import 'BilletReaffectationScreen.dart';
 
@@ -346,12 +347,13 @@ class _ClientBilletCheckScreenState extends State<ClientBilletCheckScreen> {
       body: Column(
         children: [
           Expanded(
-            child: Stack(
-              children: [
-                MobileScanner(
-                  controller: _controller,
-                  onDetect: _onDetectBarcode,
-                ),
+            child: CameraScannerShell(
+              controller: _controller,
+              onDetect: _onDetectBarcode,
+              permissionRationale:
+                  'Pour vérifier votre billet, RusaTravel a besoin d\'accéder à la '
+                  'caméra afin de lire le QR code. Aucune photo n\'est enregistrée.',
+              overlays: [
                 IgnorePointer(
                   child: Container(color: Colors.black.withValues(alpha: 0.35)),
                 ),

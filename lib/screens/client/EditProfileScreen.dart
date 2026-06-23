@@ -38,7 +38,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   final TextEditingController _lieuNaissanceController =
       TextEditingController();
 
-  String _genre = 'Homme';
+  String? _genre;
   DateTime? _dateNaissance;
   String? _photoBase64; // base64 brut (sans préfixe)
   Uint8List? _photoPreview;
@@ -117,11 +117,12 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     });
   }
 
-  String _normalizeGenre(String? raw) {
+  String? _normalizeGenre(String? raw) {
     final g = (raw ?? '').trim().toLowerCase();
+    if (g.isEmpty) return null;
     if (g == 'm' || g.startsWith('h') || g.startsWith('mascul')) return 'Homme';
     if (g == 'f' || g.startsWith('fem')) return 'Femme';
-    return 'Autre';
+    return null;
   }
 
   DateTime? _parseDate(String? raw) {
@@ -435,38 +436,69 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   }
 
   Widget _buildGenreDropdown() {
+    const unspecifiedLabel = 'Non renseigné (facultatif)';
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        decoration: BoxDecoration(
-          color: const Color(0xFF1A1A1A),
-          borderRadius: BorderRadius.circular(15),
-        ),
-        child: DropdownButtonHideUnderline(
-          child: DropdownButton<String>(
-            value: _genre,
-            isExpanded: true,
-            style: const TextStyle(color: Colors.white),
-            dropdownColor: const Color(0xFF1A1A1A),
-            icon: const Icon(Icons.arrow_drop_down, color: _accent),
-            items: _genres
-                .map(
-                  (g) => DropdownMenuItem<String>(
-                    value: g,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Padding(
+            padding: EdgeInsets.only(left: 4, bottom: 8),
+            child: Text(
+              'Genre (facultatif)',
+              style: TextStyle(color: Colors.white54, fontSize: 13),
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            decoration: BoxDecoration(
+              color: const Color(0xFF1A1A1A),
+              borderRadius: BorderRadius.circular(15),
+            ),
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<String?>(
+                value: _genre,
+                isExpanded: true,
+                hint: const Text(
+                  unspecifiedLabel,
+                  style: TextStyle(color: Colors.white38),
+                ),
+                style: const TextStyle(color: Colors.white),
+                dropdownColor: const Color(0xFF1A1A1A),
+                icon: const Icon(Icons.arrow_drop_down, color: _accent),
+                items: [
+                  const DropdownMenuItem<String?>(
+                    value: null,
                     child: Row(
                       children: [
-                        const Icon(Icons.wc, color: _accent),
-                        const SizedBox(width: 12),
-                        Text(g, style: const TextStyle(color: Colors.white)),
+                        Icon(Icons.remove_circle_outline, color: _accent),
+                        SizedBox(width: 12),
+                        Text(
+                          unspecifiedLabel,
+                          style: TextStyle(color: Colors.white54),
+                        ),
                       ],
                     ),
                   ),
-                )
-                .toList(),
-            onChanged: (v) => setState(() => _genre = v ?? 'Autre'),
+                  ..._genres.map(
+                    (g) => DropdownMenuItem<String?>(
+                      value: g,
+                      child: Row(
+                        children: [
+                          const Icon(Icons.wc, color: _accent),
+                          const SizedBox(width: 12),
+                          Text(g, style: const TextStyle(color: Colors.white)),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+                onChanged: (v) => setState(() => _genre = v),
+              ),
+            ),
           ),
-        ),
+        ],
       ),
     );
   }

@@ -562,7 +562,7 @@ class ApiService {
     String? emailClient,
     required String telephone,
     String? adresseClient,
-    required String genreClient,
+    String? genreClient,
     String? province,
     String? ville,
     String? commune,
@@ -575,7 +575,6 @@ class ApiService {
     final payload = <String, dynamic>{
       'nomClient': nomClient.trim(),
       'telephone': telephone.trim(),
-      'genreClient': genreClient.trim(),
       'acceptTerms': acceptTerms,
       'subscribeNewsletter': subscribeNewsletter,
       'marketingConsent': marketingConsent,
@@ -587,6 +586,8 @@ class ApiService {
         payload[key] = normalized;
       }
     }
+
+    addOptional('genreClient', genreClient);
 
     addOptional('emailClient', emailClient);
     addOptional('adresseClient', adresseClient);
@@ -613,7 +614,7 @@ class ApiService {
     String? emailClient,
     required String telephone,
     String? adresseClient,
-    required String genreClient,
+    String? genreClient,
     String? province,
     String? ville,
     String? commune,
@@ -661,7 +662,7 @@ class ApiService {
     String? emailClient,
     required String telephone,
     String? adresseClient,
-    required String genreClient,
+    String? genreClient,
     String? province,
     String? ville,
     String? commune,
@@ -711,7 +712,7 @@ class ApiService {
     String? emailClient,
     required String telephone,
     String? adresseClient,
-    required String genreClient,
+    String? genreClient,
     String? province,
     String? ville,
     String? commune,
@@ -957,6 +958,44 @@ class ApiService {
     } catch (e) {
       debugPrint('Erreur putUtilisateurProfile: $e');
       return UtilisateurPutResult(ok: false, errorMessage: e.toString());
+    }
+  }
+
+  /// `PUT /api/Utilisateur/toggle-statut/{id}` — désactivation douce du compte.
+  static Future<UtilisateurToggleStatutResult> toggleUtilisateurStatut(
+    int id,
+  ) async {
+    if (id <= 0) {
+      return const UtilisateurToggleStatutResult(
+        ok: false,
+        errorMessage: 'Identifiant utilisateur invalide.',
+      );
+    }
+    try {
+      final headers = await _getHeaders();
+      final response = await http.put(
+        Uri.parse('$baseUrl/Utilisateur/toggle-statut/$id'),
+        headers: headers,
+      );
+      if (response.statusCode == 200 || response.statusCode == 204) {
+        return const UtilisateurToggleStatutResult(ok: true);
+      }
+      String? message;
+      try {
+        final err = json.decode(response.body);
+        if (err is Map) {
+          message = err['message']?.toString() ??
+              err['detail']?.toString() ??
+              err['title']?.toString();
+        }
+      } catch (_) {}
+      return UtilisateurToggleStatutResult(
+        ok: false,
+        errorMessage: message ?? 'Échec (${response.statusCode})',
+      );
+    } catch (e) {
+      debugPrint('Erreur toggleUtilisateurStatut: $e');
+      return UtilisateurToggleStatutResult(ok: false, errorMessage: e.toString());
     }
   }
 

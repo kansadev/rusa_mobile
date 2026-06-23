@@ -16,6 +16,8 @@
 	<string>6.0</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Votre position est utilisée pour proposer les voyages au départ de votre ville.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>L'accès à la caméra est nécessaire pour scanner le QR code de votre billet.</string>
 	<key>CFBundleName</key>
 	<string>rusa</string>
 	<key>CFBundlePackageType</key>

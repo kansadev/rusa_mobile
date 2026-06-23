@@ -21,7 +21,7 @@ class _RegisterPageState extends State<RegisterPage> {
       TextEditingController();
   final TextEditingController _telephoneController = TextEditingController();
   final TextEditingController _emailClientController = TextEditingController();
-  String _selectedGenre = 'Homme'; // Valeur par défaut pour le dropdown
+  String? _selectedGenre;
 
   @override
   void dispose() {
@@ -64,7 +64,9 @@ class _RegisterPageState extends State<RegisterPage> {
 
     setState(() => _isSubmitting = true);
     try {
-      final genre = _selectedGenre == 'Femme' ? 'F' : 'M';
+      final genre = _selectedGenre == null
+          ? null
+          : (_selectedGenre == 'Femme' ? 'F' : 'M');
       final result = await ApiService.registerClient(
         nomClient: _nomClientController.text.trim(),
         emailClient: _emailClientController.text,
@@ -346,43 +348,75 @@ class _RegisterPageState extends State<RegisterPage> {
   }
 
   Widget _buildGenreDropdown() {
-    final List<String> genres = ['Homme', 'Femme'];
+    const unspecifiedLabel = 'Non renseigné (facultatif)';
+    const genres = ['Homme', 'Femme'];
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 20.0),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        decoration: BoxDecoration(
-          color: const Color(0xFF222222),
-          borderRadius: BorderRadius.circular(15),
-          border: Border.all(color: Colors.white10),
-        ),
-        child: DropdownButtonHideUnderline(
-          child: DropdownButton<String>(
-            value: _selectedGenre,
-            isExpanded: true,
-            style: const TextStyle(color: Colors.white),
-            dropdownColor: const Color(0xFF222222),
-            icon: const Icon(Icons.arrow_drop_down, color: Color(0xFF00E676)),
-            items: genres.map((String genre) {
-              return DropdownMenuItem<String>(
-                value: genre,
-                child: Row(
-                  children: [
-                    const Icon(Icons.person, color: Color(0xFF00E676)),
-                    const SizedBox(width: 12),
-                    Text(genre, style: const TextStyle(color: Colors.white)),
-                  ],
-                ),
-              );
-            }).toList(),
-            onChanged: (String? newValue) {
-              setState(() {
-                _selectedGenre = newValue!;
-              });
-            },
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Padding(
+            padding: EdgeInsets.only(left: 4, bottom: 8),
+            child: Text(
+              'Genre (facultatif)',
+              style: TextStyle(color: Colors.white54, fontSize: 13),
+            ),
           ),
-        ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            decoration: BoxDecoration(
+              color: const Color(0xFF222222),
+              borderRadius: BorderRadius.circular(15),
+              border: Border.all(color: Colors.white10),
+            ),
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<String?>(
+                value: _selectedGenre,
+                isExpanded: true,
+                hint: const Text(
+                  unspecifiedLabel,
+                  style: TextStyle(color: Colors.white54),
+                ),
+                style: const TextStyle(color: Colors.white),
+                dropdownColor: const Color(0xFF222222),
+                icon: const Icon(Icons.arrow_drop_down, color: Color(0xFF00E676)),
+                items: [
+                  const DropdownMenuItem<String?>(
+                    value: null,
+                    child: Row(
+                      children: [
+                        Icon(Icons.remove_circle_outline,
+                            color: Color(0xFF00E676)),
+                        SizedBox(width: 12),
+                        Text(
+                          unspecifiedLabel,
+                          style: TextStyle(color: Colors.white54),
+                        ),
+                      ],
+                    ),
+                  ),
+                  ...genres.map((String genre) {
+                    return DropdownMenuItem<String?>(
+                      value: genre,
+                      child: Row(
+                        children: [
+                          const Icon(Icons.person, color: Color(0xFF00E676)),
+                          const SizedBox(width: 12),
+                          Text(genre,
+                              style: const TextStyle(color: Colors.white)),
+                        ],
+                      ),
+                    );
+                  }),
+                ],
+                onChanged: (String? newValue) {
+                  setState(() => _selectedGenre = newValue);
+                },
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

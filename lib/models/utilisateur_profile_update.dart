@@ -12,6 +12,16 @@ class UtilisateurPutResult {
   });
 }
 
+class UtilisateurToggleStatutResult {
+  final bool ok;
+  final String? errorMessage;
+
+  const UtilisateurToggleStatutResult({
+    required this.ok,
+    this.errorMessage,
+  });
+}
+
 class UtilisateurProfileUpdate {
   final int idUtilisateur;
   final String nomComplet;
@@ -20,7 +30,7 @@ class UtilisateurProfileUpdate {
   final String? photoUrl;
   final String? lieuNaissance;
   final String? dateNaissance;
-  final String genre;
+  final String? genre;
 
   UtilisateurProfileUpdate({
     required this.idUtilisateur,
@@ -30,7 +40,7 @@ class UtilisateurProfileUpdate {
     this.photoUrl,
     this.lieuNaissance,
     this.dateNaissance,
-    required this.genre,
+    this.genre,
   });
 
   Map<String, dynamic> toJson() {
@@ -44,7 +54,8 @@ class UtilisateurProfileUpdate {
         'lieuNaissance': lieuNaissance!.trim(),
       if (dateNaissance != null && dateNaissance!.trim().isNotEmpty)
         'dateNaissance': dateNaissance,
-      if (genre.trim().isNotEmpty) 'genre': genreForApi(genre),
+      if (genre != null && genre!.trim().isNotEmpty)
+        'genre': genreForApi(genre!),
     };
   }
 

@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:rusa/screens/ProfileImageViewScreen.dart';
 
 class ProfileImageWidget extends StatelessWidget {
-  final String imagePath;
+  final String? imagePath;
   final String? imageUrl;
   final double size;
   final double borderWidth;
@@ -15,7 +15,7 @@ class ProfileImageWidget extends StatelessWidget {
 
   const ProfileImageWidget({
     super.key,
-    required this.imagePath,
+    this.imagePath,
     this.imageUrl,
     this.size = 50.0,
     this.borderWidth = 2.0,
@@ -23,6 +23,65 @@ class ProfileImageWidget extends StatelessWidget {
     this.onTap,
     this.userName,
   });
+
+  /// Construit l'image de profil (réseau, base64, asset local ou avatar par défaut).
+  static Widget buildProfileImage({
+    String? imagePath,
+    String? imageUrl,
+    double? width,
+    double? height,
+    BoxFit fit = BoxFit.cover,
+  }) {
+    final rawImage = imageUrl?.trim() ?? '';
+    if (rawImage.isNotEmpty) {
+      if (rawImage.startsWith('http://') || rawImage.startsWith('https://')) {
+        return Image.network(
+          rawImage,
+          fit: fit,
+          width: width,
+          height: height,
+          errorBuilder: (context, error, stackTrace) =>
+              _defaultAvatarIcon(width: width, height: height),
+        );
+      }
+
+      final bytes = _decodeBase64Image(rawImage);
+      if (bytes != null) {
+        return Image.memory(
+          bytes,
+          fit: fit,
+          width: width,
+          height: height,
+          gaplessPlayback: true,
+          errorBuilder: (context, error, stackTrace) =>
+              _defaultAvatarIcon(width: width, height: height),
+        );
+      }
+
+      return Image.network(
+        rawImage,
+        fit: fit,
+        width: width,
+        height: height,
+        errorBuilder: (context, error, stackTrace) =>
+            _defaultAvatarIcon(width: width, height: height),
+      );
+    }
+
+    final assetPath = imagePath?.trim() ?? '';
+    if (assetPath.isNotEmpty && !assetPath.startsWith('http')) {
+      return Image.asset(
+        assetPath,
+        fit: fit,
+        width: width,
+        height: height,
+        errorBuilder: (context, error, stackTrace) =>
+            _defaultAvatarIcon(width: width, height: height),
+      );
+    }
+
+    return _defaultAvatarIcon(width: width, height: height);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -51,75 +110,34 @@ class ProfileImageWidget extends StatelessWidget {
           shape: BoxShape.circle,
           border: Border.all(color: borderColor, width: borderWidth),
         ),
-        child: ClipOval(child: _buildProfileImage()),
-      ),
-    );
-  }
-
-  Widget _buildProfileImage() {
-    final rawImage = imageUrl?.trim() ?? '';
-    final hasRemoteImage = rawImage.isNotEmpty;
-
-    if (hasRemoteImage) {
-      if (rawImage.startsWith('http://') || rawImage.startsWith('https://')) {
-        return Image.network(
-          rawImage,
-          fit: BoxFit.cover,
-          width: size - 4,
-          height: size - 4,
-          errorBuilder: (context, error, stackTrace) => _defaultAvatarIcon(),
-        );
-      }
-
-      final bytes = _decodeBase64Image(rawImage);
-      if (bytes != null) {
-        return Image.memory(
-          bytes,
-          fit: BoxFit.cover,
-          width: size - 4,
-          height: size - 4,
-          gaplessPlayback: true,
-          errorBuilder: (context, error, stackTrace) => _defaultAvatarIcon(),
-        );
-      }
-
-      return Image.network(
-        rawImage,
-        fit: BoxFit.cover,
-        width: size - 4,
-        height: size - 4,
-        errorBuilder: (context, error, stackTrace) => _defaultAvatarIcon(),
-      );
-    }
-
-    final assetPath = imagePath.trim();
-    if (assetPath.isNotEmpty && !assetPath.startsWith('http')) {
-      return Image.asset(
-        assetPath,
-        fit: BoxFit.cover,
-        width: size - 4,
-        height: size - 4,
-        errorBuilder: (context, error, stackTrace) => _defaultAvatarIcon(),
-      );
-    }
-
-    return _defaultAvatarIcon();
-  }
-
-  Widget _defaultAvatarIcon() {
-    return const ColoredBox(
-      color: Color(0xFF1A1A1A),
-      child: Center(
-        child: Icon(
-          Icons.person_rounded,
-          color: Color(0xFF00E676),
-          size: 28,
+        child: ClipOval(
+          child: buildProfileImage(
+            imagePath: imagePath,
+            imageUrl: imageUrl,
+            width: size - 4,
+            height: size - 4,
+          ),
         ),
       ),
     );
   }
 
-  Uint8List? _decodeBase64Image(String input) {
+  static Widget _defaultAvatarIcon({double? width, double? height}) {
+    return ColoredBox(
+      color: const Color(0xFF1A1A1A),
+      child: Center(
+        child: Icon(
+          Icons.person_rounded,
+          color: const Color(0xFF00E676),
+          size: (width != null && height != null)
+              ? (width < height ? width : height) * 0.56
+              : 28,
+        ),
+      ),
+    );
+  }
+
+  static Uint8List? _decodeBase64Image(String input) {
     try {
       final cleaned = input.contains('base64,')
           ? input.split('base64,').last

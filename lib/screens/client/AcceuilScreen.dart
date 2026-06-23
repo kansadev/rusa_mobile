@@ -413,7 +413,6 @@ class _SearchTripScreenState extends State<SearchTripScreen> {
               Row(
                 children: [
                   ProfileImageWidget(
-                    imagePath: '',
                     imageUrl: _userPhotoUrl,
                     userName: _userName,
                     onTap: hasProfilePhoto
@@ -422,14 +421,13 @@ class _SearchTripScreenState extends State<SearchTripScreen> {
                               context,
                               MaterialPageRoute(
                                 builder: (context) => ProfileImageViewScreen(
-                                  imagePath: '',
                                   imageUrl: _userPhotoUrl,
                                   userName: _userName,
                                 ),
                               ),
                             );
                           }
-                        : () {},
+                        : null,
                   ),
                   const SizedBox(width: 12),
                   Text(

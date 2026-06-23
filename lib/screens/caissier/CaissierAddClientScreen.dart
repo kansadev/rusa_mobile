@@ -24,7 +24,7 @@ class _CaissierAddClientScreenState extends State<CaissierAddClientScreen> {
   final _avenueController = TextEditingController();
   final _numeroController = TextEditingController();
 
-  String _genre = 'M';
+  String? _genre;
   bool _isSubmitting = false;
 
   static const _bg = Color(0xFF0A0F0D);
@@ -226,7 +226,7 @@ class _CaissierAddClientScreenState extends State<CaissierAddClientScreen> {
             const SizedBox(height: 20),
             _field(label: 'Nom complet', controller: _nomController),
             Text(
-              'Genre',
+              'Genre (facultatif)',
               style: TextStyle(
                 color: Colors.white.withValues(alpha: 0.54),
                 fontSize: 12,
@@ -240,7 +240,9 @@ class _CaissierAddClientScreenState extends State<CaissierAddClientScreen> {
                   selected: _genre == 'M',
                   onSelected: _isSubmitting
                       ? null
-                      : (_) => setState(() => _genre = 'M'),
+                      : (_) => setState(
+                            () => _genre = _genre == 'M' ? null : 'M',
+                          ),
                   selectedColor: _accent.withValues(alpha: 0.35),
                   labelStyle: TextStyle(
                     color: _genre == 'M' ? Colors.white : Colors.white70,
@@ -252,7 +254,9 @@ class _CaissierAddClientScreenState extends State<CaissierAddClientScreen> {
                   selected: _genre == 'F',
                   onSelected: _isSubmitting
                       ? null
-                      : (_) => setState(() => _genre = 'F'),
+                      : (_) => setState(
+                            () => _genre = _genre == 'F' ? null : 'F',
+                          ),
                   selectedColor: _accent.withValues(alpha: 0.35),
                   labelStyle: TextStyle(
                     color: _genre == 'F' ? Colors.white : Colors.white70,

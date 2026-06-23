@@ -1,14 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:rusa/widgets/ProfileImageWidget.dart';
 
 class ProfileImageViewScreen extends StatelessWidget {
-  final String imagePath;
+  final String? imagePath;
   final String? imageUrl;
   final String? userName;
 
   const ProfileImageViewScreen({
     super.key,
-    required this.imagePath,
+    this.imagePath,
     this.imageUrl,
     this.userName,
   });
@@ -68,7 +69,12 @@ class ProfileImageViewScreen extends StatelessWidget {
                 ),
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(20),
-                  child: Image.asset(imagePath, fit: BoxFit.cover),
+                  child: ProfileImageWidget.buildProfileImage(
+                    imagePath: imagePath,
+                    imageUrl: imageUrl,
+                    width: double.infinity,
+                    height: double.infinity,
+                  ),
                 ),
               ),
             ),

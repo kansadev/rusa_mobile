@@ -6,6 +6,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:rusa/models/billet_check_response.dart';
 import 'package:rusa/services/api_service.dart';
+import 'package:rusa/widgets/camera_scanner_shell.dart';
 
 class ClientCheckBilletScreen extends StatefulWidget {
   const ClientCheckBilletScreen({super.key});
@@ -485,33 +486,33 @@ class _ClientCheckBilletScreenState extends State<ClientCheckBilletScreen>
         ),
         centerTitle: true,
       ),
-      body: Stack(
-        children: [
-          MobileScanner(controller: _controller, onDetect: _onDetect),
+      body: CameraScannerShell(
+        controller: _controller,
+        onDetect: _onDetect,
+        permissionRationale:
+            'Pour vérifier votre billet, RusaTravel a besoin d\'accéder à la '
+            'caméra afin de lire le QR code. Aucune photo n\'est enregistrée.',
+        overlays: [
           Positioned(
             left: 0,
             right: 0,
             bottom: 32,
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 24),
-              child: Column(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: Colors.black54,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Text(
-                      'Placez le QR code du billet dans le cadre pour vérifier sa validité.',
-                      textAlign: TextAlign.center,
-                      style: GoogleFonts.poppins(
-                        color: Colors.white,
-                        fontSize: 14,
-                      ),
-                    ),
+              child: Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: Colors.black54,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  'Placez le QR code du billet dans le cadre pour vérifier sa validité.',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.poppins(
+                    color: Colors.white,
+                    fontSize: 14,
                   ),
-                ],
+                ),
               ),
             ),
           ),

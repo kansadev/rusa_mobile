@@ -12,7 +12,9 @@ import 'package:rusa/services/session_service.dart';
 import 'package:rusa/services/cache_service.dart';
 import 'package:rusa/services/location_service.dart';
 import 'package:rusa/screens/auth/LoginScreen.dart';
+import 'package:rusa/screens/legal/legal_document_screen.dart';
 import 'package:rusa/widgets/password_change_reminder.dart';
+import 'package:rusa/utils/account_deletion_helper.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -421,17 +423,26 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     _buildActionTile(
                       icon: Icons.help_outline,
                       title: 'FAQ',
-                      onTap: () {},
+                      onTap: () => LegalDocumentScreen.open(
+                        context,
+                        LegalDocumentType.faq,
+                      ),
                     ),
                     _buildActionTile(
                       icon: Icons.info_outline,
                       title: 'Conditions d\'utilisation',
-                      onTap: () {},
+                      onTap: () => LegalDocumentScreen.open(
+                        context,
+                        LegalDocumentType.terms,
+                      ),
                     ),
                     _buildActionTile(
                       icon: Icons.person_outline,
                       title: 'Politique utilisateur',
-                      onTap: () {},
+                      onTap: () => LegalDocumentScreen.open(
+                        context,
+                        LegalDocumentType.privacy,
+                      ),
                     ),
                   ]),
                   const SizedBox(height: 30),
@@ -454,6 +465,28 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.white,
                         elevation: 0,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(30),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 48,
+                    child: OutlinedButton.icon(
+                      onPressed: _client?.id != null && _client!.id > 0
+                          ? () => AccountDeletionHelper.requestDeletion(
+                                context,
+                                userId: _client!.id,
+                              )
+                          : null,
+                      icon: const Icon(Icons.delete_outline, size: 20),
+                      label: const Text('Supprimer mon compte'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.redAccent,
+                        side: const BorderSide(color: Colors.redAccent),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(30),
                         ),
