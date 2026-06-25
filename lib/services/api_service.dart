@@ -44,7 +44,7 @@ class ApiService {
 
   /// Choix manuel de l'environnement:
   /// 0 = dev, 1 = staging, 2 = production
-  static const int _environmentIndex = 1;
+  static const int _environmentIndex = 2;
 
   // Méthode pour déterminer l'URL de base en fonction de l'environnement
   static String get baseUrl => _getBaseUrl();
