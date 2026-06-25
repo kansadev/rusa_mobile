@@ -115,6 +115,18 @@ class _CaissierClientPickerSheetState extends State<CaissierClientPickerSheet> {
             ),
           ),
           Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+            child: Text(
+              'Un client créé appartient d\'abord à la plateforme Rusa. '
+              'Il sera rattaché à votre société après sa première réservation.',
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.45),
+                fontSize: 11,
+                height: 1.35,
+              ),
+            ),
+          ),
+          Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: TextField(
               controller: _searchController,

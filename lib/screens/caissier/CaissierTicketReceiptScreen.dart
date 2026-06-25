@@ -95,6 +95,7 @@ class _CaissierTicketReceiptScreenState
         response,
         voyage: voyage,
         passengerFallback: passengerFallback,
+        methodePaiementOverride: widget.paiementHint?.methodePaiement,
       );
       _error = null;
     });

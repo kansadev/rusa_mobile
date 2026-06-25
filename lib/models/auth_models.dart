@@ -297,6 +297,7 @@ class Client {
   final bool statut;
   final bool isActif;
   final int? idAxe;
+  final int? idSociete;
   final List<dynamic> usages;
   final int usagesCount;
 
@@ -311,9 +312,18 @@ class Client {
     required this.statut,
     required this.isActif,
     this.idAxe,
+    this.idSociete,
     required this.usages,
     this.usagesCount = 0,
   });
+
+  /// Vrai si le client a déjà réservé au moins une fois (rattaché à une société).
+  bool get hasReservationHistory =>
+      usagesCount > 0 || usages.isNotEmpty;
+
+  /// Vrai si le client est rattaché à la société [societeId] (après réservation).
+  bool isLinkedToSociete(int societeId) =>
+      societeId > 0 && idSociete == societeId && hasReservationHistory;
 
   factory Client.empty() {
     return Client(
@@ -340,7 +350,13 @@ class Client {
       statut: json['statut'] ?? false,
       isActif: json['isActif'] ?? false,
       idAxe: json['idAxe'],
+      idSociete: json['idSociete'] is num
+          ? (json['idSociete'] as num).toInt()
+          : int.tryParse('${json['idSociete'] ?? ''}'),
       usages: (json['usages'] as List?) ?? [],
+      usagesCount: json['usagesCount'] is num
+          ? (json['usagesCount'] as num).toInt()
+          : ((json['usages'] as List?)?.length ?? 0),
     );
   }
 
@@ -356,8 +372,59 @@ class Client {
       'statut': statut,
       'isActif': isActif,
       'idAxe': idAxe,
+      'idSociete': idSociete,
       'usages': usages,
     };
+  }
+}
+
+/// Réponse paginée de `GET /api/Client/societe/{idSociete}/paged`.
+class ClientPagedResponse {
+  final List<Client> data;
+  final int totalCount;
+  final int pageNumber;
+  final int pageSize;
+  final int totalPages;
+  final bool hasPreviousPage;
+  final bool hasNextPage;
+
+  ClientPagedResponse({
+    required this.data,
+    required this.totalCount,
+    required this.pageNumber,
+    required this.pageSize,
+    required this.totalPages,
+    required this.hasPreviousPage,
+    required this.hasNextPage,
+  });
+
+  factory ClientPagedResponse.fromJson(Map<String, dynamic> json) {
+    final rawList = json['data'];
+    final List<Client> rows = [];
+    if (rawList is List) {
+      for (final item in rawList) {
+        if (item is Map<String, dynamic>) {
+          rows.add(Client.fromJson(item));
+        } else if (item is Map) {
+          rows.add(Client.fromJson(Map<String, dynamic>.from(item)));
+        }
+      }
+    }
+
+    int asInt(dynamic v, int fallback) {
+      if (v is num) return v.toInt();
+      return int.tryParse('$v') ?? fallback;
+    }
+
+    return ClientPagedResponse(
+      data: rows,
+      totalCount: asInt(json['totalCount'], 0),
+      pageNumber: asInt(json['pageNumber'], 1),
+      pageSize: asInt(json['pageSize'], 10),
+      totalPages: asInt(json['totalPages'], 1),
+      hasPreviousPage: json['hasPreviousPage'] as bool? ?? false,
+      hasNextPage: json['hasNextPage'] as bool? ?? false,
+    );
   }
 }
 

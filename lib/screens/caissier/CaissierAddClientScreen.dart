@@ -178,11 +178,21 @@ class _CaissierAddClientScreenState extends State<CaissierAddClientScreen> {
             borderSide: const BorderSide(color: _accent, width: 1.2),
           ),
         ),
-        validator:
-            validator ??
-            (v) => (v == null || v.trim().isEmpty) ? 'Champ requis' : null,
+        validator: validator,
       ),
     );
+  }
+
+  String? _requiredValidator(String? value) {
+    if (value == null || value.trim().isEmpty) return 'Champ obligatoire';
+    return null;
+  }
+
+  String? _optionalEmailValidator(String? value) {
+    final text = value?.trim() ?? '';
+    if (text.isEmpty) return null;
+    if (!text.contains('@')) return 'E-mail invalide';
+    return null;
   }
 
   @override
@@ -216,7 +226,8 @@ class _CaissierAddClientScreenState extends State<CaissierAddClientScreen> {
           padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
           children: [
             Text(
-              'Créez un compte client lorsque la personne n’existe pas encore dans le système. Les champs marqués par la validation sont obligatoires.',
+              'Créez un compte client lorsque la personne n’existe pas encore dans le '
+              'système. Seuls le nom et le téléphone sont obligatoires.',
               style: TextStyle(
                 color: Colors.white.withValues(alpha: 0.65),
                 fontSize: 13,
@@ -224,7 +235,11 @@ class _CaissierAddClientScreenState extends State<CaissierAddClientScreen> {
               ),
             ),
             const SizedBox(height: 20),
-            _field(label: 'Nom complet', controller: _nomController),
+            _field(
+              label: 'Nom complet *',
+              controller: _nomController,
+              validator: _requiredValidator,
+            ),
             Text(
               'Genre (facultatif)',
               style: TextStyle(
@@ -266,29 +281,41 @@ class _CaissierAddClientScreenState extends State<CaissierAddClientScreen> {
             ),
             const SizedBox(height: 12),
             _field(
-              label: 'E-mail',
+              label: 'E-mail (facultatif)',
               controller: _emailController,
               keyboardType: TextInputType.emailAddress,
-              validator: (v) {
-                if (v == null || v.trim().isEmpty) return 'Champ requis';
-                if (!v.contains('@')) return 'E-mail invalide';
-                return null;
-              },
+              validator: _optionalEmailValidator,
             ),
             _field(
-              label: 'Téléphone',
+              label: 'Téléphone *',
               controller: _telephoneController,
               keyboardType: TextInputType.phone,
+              validator: _requiredValidator,
             ),
             _field(
-              label: 'Adresse (ligne principale)',
+              label: 'Adresse (facultatif)',
               controller: _adresseController,
             ),
-            _field(label: 'Province', controller: _provinceController),
-            _field(label: 'Ville', controller: _villeController),
-            _field(label: 'Commune', controller: _communeController),
-            _field(label: 'Avenue', controller: _avenueController),
-            _field(label: 'Numéro', controller: _numeroController),
+            _field(
+              label: 'Province (facultatif)',
+              controller: _provinceController,
+            ),
+            _field(
+              label: 'Ville (facultatif)',
+              controller: _villeController,
+            ),
+            _field(
+              label: 'Commune (facultatif)',
+              controller: _communeController,
+            ),
+            _field(
+              label: 'Avenue (facultatif)',
+              controller: _avenueController,
+            ),
+            _field(
+              label: 'Numéro (facultatif)',
+              controller: _numeroController,
+            ),
             const SizedBox(height: 8),
             SizedBox(
               height: 52,

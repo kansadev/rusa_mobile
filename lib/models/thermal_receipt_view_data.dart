@@ -51,6 +51,7 @@ class ThermalReceiptViewData {
     required String passengerFallback,
     Voyage? voyage,
     DateTime? printedAt,
+    String? methodePaiementOverride,
   }) {
     final reservation = data.reservation;
     final paiement = data.paiement;
@@ -65,7 +66,12 @@ class ThermalReceiptViewData {
         ? montantPaye
         : (montantAPaye > 0 ? montantAPaye : prixVoyage);
 
-    final electronic = _isPaiementElectronique(paiement.methodePaiement);
+    final electronic = _isPaiementElectronique(
+      _resolveMethodePaiement(
+        paiement.methodePaiement,
+        override: methodePaiementOverride,
+      ),
+    );
     final passagers = billetsRaw.length;
     var majoration = 0.0;
     double? montAddUnitaire;
@@ -100,7 +106,10 @@ class ThermalReceiptViewData {
       devise: devise,
       isPaiementElectronique: electronic,
       montAddUnitaire: montAddUnitaire,
-      methodePaiement: paiement.methodePaiement,
+      methodePaiement: _resolveMethodePaiement(
+        paiement.methodePaiement,
+        override: methodePaiementOverride,
+      ),
       referenceTransaction: paiement.referenceTransaction,
       billets: billetsRaw
           .map(
@@ -117,6 +126,15 @@ class ThermalReceiptViewData {
           .toList(),
       printedAt: printedAt ?? DateTime.now(),
     );
+  }
+
+  static String _resolveMethodePaiement(
+    String raw, {
+    String? override,
+  }) {
+    final forced = override?.trim() ?? '';
+    if (forced.isNotEmpty) return forced;
+    return raw.trim();
   }
 
   static bool _isPaiementElectronique(String raw) {
@@ -201,6 +219,7 @@ class ThermalReceiptViewData {
       case 'ESPÈCES':
         return 'Espèces';
       case 'MOBILE_MONEY':
+      case 'MOBILE MONEY':
         return 'Mobile Money';
       case 'CARTE_BANCAIRE':
         return 'Carte bancaire';

@@ -49,9 +49,9 @@ class CaissierBilletLoader {
       montantAPaye: pay.montantAPaye > 0 ? pay.montantAPaye : hint.montantAPaye,
       montantPaye: pay.montantPaye > 0 ? pay.montantPaye : hint.montantPaye,
       resteAPaye: pay.resteAPaye,
-      methodePaiement: pay.methodePaiement.trim().isNotEmpty
-          ? pay.methodePaiement
-          : hint.methodePaiement,
+      methodePaiement: hint.methodePaiement.trim().isNotEmpty
+          ? hint.methodePaiement
+          : pay.methodePaiement,
       referenceTransaction: pay.referenceTransaction.trim().isNotEmpty
           ? pay.referenceTransaction
           : hint.referenceTransaction,

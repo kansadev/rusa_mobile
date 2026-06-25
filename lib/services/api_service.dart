@@ -1103,6 +1103,51 @@ class ApiService {
     }
   }
 
+  /// Clients paginés par société (`GET /api/Client/societe/{idSociete}/paged`).
+  static Future<ClientPagedResponse?> getClientsBySocietePaged({
+    required int idSociete,
+    int pageNumber = 1,
+    int pageSize = 20,
+    String? searchTerm,
+    String? sortBy,
+    bool sortDescending = true,
+    bool includeInactive = true,
+  }) async {
+    if (idSociete <= 0) return null;
+    try {
+      final headers = await _getHeaders();
+      final qp = <String, String>{
+        'PageNumber': pageNumber.toString(),
+        'PageSize': pageSize.toString(),
+        'SortDescending': sortDescending.toString(),
+        'IdSociete': idSociete.toString(),
+        'IncludeInactive': includeInactive.toString(),
+        if (searchTerm != null && searchTerm.trim().isNotEmpty)
+          'SearchTerm': searchTerm.trim(),
+        if (sortBy != null && sortBy.isNotEmpty) 'SortBy': sortBy,
+      };
+      final uri = Uri.parse(
+        '$baseUrl/Client/societe/$idSociete/paged',
+      ).replace(queryParameters: qp);
+
+      debugPrint('Requête clients société paged: $uri');
+      final response = await http.get(uri, headers: headers);
+      debugPrint('Status clients société paged: ${response.statusCode}');
+
+      if (response.statusCode == 200) {
+        final decoded = json.decode(response.body);
+        if (decoded is Map<String, dynamic>) {
+          return ClientPagedResponse.fromJson(decoded);
+        }
+      }
+      debugPrint('getClientsBySocietePaged: ${response.body}');
+      return null;
+    } catch (e) {
+      debugPrint('Erreur getClientsBySocietePaged: $e');
+      return null;
+    }
+  }
+
   /// Détail d'un client (`GET /api/Client/{id}`).
   static Future<Client?> getClientById(int idClient) async {
     try {
@@ -1487,7 +1532,7 @@ class ApiService {
             normalized['montantPaye'] = montantPayeNormalise;
             normalized['resteAPaye'] = normalized['resteAPaye'] ?? 0;
             normalized['methodePaiement'] =
-                normalized['methodePaiement'] ?? 'Mobile Money';
+                normalized['methodePaiement'] ?? canonicalMethod;
             normalized['referenceTransaction'] =
                 normalized['referenceTransaction'] ?? '';
             normalized['message'] =
@@ -1500,6 +1545,7 @@ class ApiService {
                 normalized,
                 billetsListe: allBillets.isNotEmpty ? allBillets : null,
                 montantAgregeBillets: prixTotalListe,
+                methodePaiementFallback: canonicalMethod,
               ),
             );
           }
@@ -2934,12 +2980,38 @@ class ApiService {
     Map<String, dynamic> data, {
     List<BilletData>? billetsListe,
     double? montantAgregeBillets,
+    String? methodePaiementFallback,
   }) {
+    final methodeFromApi = data['methodePaiement']?.toString().trim();
+    final methodePaiement = (methodeFromApi != null && methodeFromApi.isNotEmpty)
+        ? methodeFromApi
+        : (methodePaiementFallback?.trim().isNotEmpty == true
+              ? methodePaiementFallback!.trim()
+              : '');
+
     //extraire paiement si présent, sinon construire un PaiementData par défaut à partir des champs disponibles
     PaiementData paiement;
     if (data.containsKey('paiement') &&
         data['paiement'] is Map<String, dynamic>) {
-      paiement = PaiementData.fromJson(data['paiement']);
+      final nested = PaiementData.fromJson(data['paiement']);
+      paiement = nested.methodePaiement.trim().isNotEmpty
+          ? nested
+          : PaiementData(
+              idPaiement: nested.idPaiement,
+              montantAPaye: nested.montantAPaye,
+              montantPaye: nested.montantPaye,
+              resteAPaye: nested.resteAPaye,
+              methodePaiement: methodePaiement,
+              referenceTransaction: nested.referenceTransaction,
+              statut: nested.statut,
+              dateCreation: nested.dateCreation,
+              dateEmissionBillet: nested.dateEmissionBillet,
+              idBilletEmis: nested.idBilletEmis,
+              idReservation: nested.idReservation,
+              idSociete: nested.idSociete,
+              estComplet: nested.estComplet,
+              estPartiel: nested.estPartiel,
+            );
     } else {
       // Construire PaiementData à partir des champs de premier niveau (comme dans la réponse API)
       paiement = PaiementData(
@@ -2949,7 +3021,7 @@ class ApiService {
         montantPaye: (data['montantPaye'] ?? data['prixVoyage'] ?? 0)
             .toDouble(),
         resteAPaye: (data['resteAPaye'] ?? 0).toDouble(),
-        methodePaiement: data['methodePaiement'] ?? 'Mobile Money',
+        methodePaiement: methodePaiement,
         referenceTransaction: data['referenceTransaction'] ?? '',
         statut: data['statut'] ?? true,
         dateCreation: data['dateCreation'] ?? '',
