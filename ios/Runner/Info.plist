@@ -2,8 +2,6 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>CADisableMinimumFrameDurationOnPhone</key>
-	<true/>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
@@ -14,10 +12,6 @@
 	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
-	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Votre position est utilisée pour proposer les voyages au départ de votre ville.</string>
-	<key>NSCameraUsageDescription</key>
-	<string>L'accès à la caméra est nécessaire pour scanner le QR code de votre billet.</string>
 	<key>CFBundleName</key>
 	<string>rusa</string>
 	<key>CFBundlePackageType</key>
@@ -29,6 +23,24 @@
 	<key>CFBundleVersion</key>
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
+	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>L'appareil photo est utilisé pour scanner le QR code de votre billet.</string>
+	<key>NSContactsUsageDescription</key>
+	<string>L'accès aux contacts permet de choisir un passager lors d'une réservation.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Votre position est utilisée pour proposer les voyages au départ de votre ville.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>Votre position est utilisée pour proposer les voyages au départ de votre ville lorsque l'application est ouverte.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>L'application peut enregistrer des billets ou images dans votre galerie.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>L'accès à la galerie permet de choisir une photo de profil.</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+	<key>CADisableMinimumFrameDurationOnPhone</key>
+	<true/>
+	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
@@ -51,8 +63,6 @@
 			</array>
 		</dict>
 	</dict>
-	<key>UIApplicationSupportsIndirectInputEvents</key>
-	<true/>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIMainStoryboardFile</key>

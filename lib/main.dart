@@ -1,7 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
-import 'package:geolocator/geolocator.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:rusa/widgets/OnboardingScreen.dart';
@@ -124,23 +123,6 @@ class _AuthWrapperState extends State<AuthWrapper> {
   void initState() {
     super.initState();
     _checkAuthStatus();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _requestStartupPermissions();
-    });
-  }
-
-  /// Demande la permission de localisation dès l'ouverture de l'application
-  /// (utilisée pour filtrer les voyages selon la ville de l'utilisateur).
-  Future<void> _requestStartupPermissions() async {
-    try {
-      var permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
-      }
-      debugPrint('Permission localisation au démarrage: $permission');
-    } catch (e) {
-      debugPrint('Erreur demande permission localisation: $e');
-    }
   }
 
   Future<void> _checkAuthStatus() async {

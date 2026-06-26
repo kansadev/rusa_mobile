@@ -13,33 +13,66 @@ class MyNavigationWrapper extends StatefulWidget {
 }
 
 class _MyNavigationWrapperState extends State<MyNavigationWrapper> {
-  // Index pour la navigation
   int _bottomNavIndex = 0;
 
-  // Liste des écrans correspondants
-  final List<Widget> _screens = [
-    const SearchTripScreen(),
-    const AllVoyagesScreen(showBack: false),
-    const ReservationsScreen(),
-    const ClientBilletCheckScreen(),
-    const ProfileScreen(),
-  ];
+  /// Onglets déjà ouverts au moins une fois (évite de créer le scanner au démarrage).
+  final Set<int> _visitedTabs = {0};
+
+  /// Cache des écrans sans caméra pour conserver leur état entre les onglets.
+  final Map<int, Widget> _screenCache = {};
+
+  static const int _billetCheckTabIndex = 3;
+
+  Widget _buildScreen(int index) {
+    switch (index) {
+      case 0:
+        return const SearchTripScreen();
+      case 1:
+        return const AllVoyagesScreen(showBack: false);
+      case 2:
+        return const ReservationsScreen();
+      case _billetCheckTabIndex:
+        return const ClientBilletCheckScreen();
+      case 4:
+        return const ProfileScreen();
+      default:
+        return const SizedBox.shrink();
+    }
+  }
+
+  Widget _screenFor(int index) {
+    if (index == _billetCheckTabIndex) {
+      return _buildScreen(index);
+    }
+    return _screenCache.putIfAbsent(index, () => _buildScreen(index));
+  }
+
+  void _onTabSelected(int index) {
+    setState(() {
+      _bottomNavIndex = index;
+      _visitedTabs.add(index);
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: _screens[_bottomNavIndex],
+      body: IndexedStack(
+        index: _bottomNavIndex,
+        children: List.generate(5, (index) {
+          if (!_visitedTabs.contains(index)) {
+            return const SizedBox.shrink();
+          }
+          return _screenFor(index);
+        }),
+      ),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _bottomNavIndex,
-        onTap: (index) => setState(() => _bottomNavIndex = index),
-
-        // Couleurs et styles adaptées au thème de l'app
+        onTap: _onTabSelected,
         selectedItemColor: const Color(0xFF00E676),
         unselectedItemColor: Colors.white54,
         backgroundColor: const Color(0xFF222222),
         type: BottomNavigationBarType.fixed,
-
-        // Icônes et labels
         items: const [
           BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Accueil'),
           BottomNavigationBarItem(
@@ -59,12 +92,8 @@ class _MyNavigationWrapperState extends State<MyNavigationWrapper> {
             label: 'Profil',
           ),
         ],
-
-        // Style du texte
         selectedLabelStyle: const TextStyle(fontSize: 12),
         unselectedLabelStyle: const TextStyle(fontSize: 12),
-
-        // Élévation
         elevation: 8,
       ),
     );
