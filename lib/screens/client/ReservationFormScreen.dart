@@ -353,7 +353,7 @@ class _ReservationFormScreenState extends State<ReservationFormScreen> {
                 ),
                 const SizedBox(height: 3),
                 PaymentFeesLearnMoreText(
-                  prefix: 'Ce numéro sera utilisé pour le paiement de votre billet.',
+                  prefix: 'Ce numéro sera utilisé pour le paiement. Frais possibles :',
                   voyage: widget.voyage,
                   isCaissier: _isVenteCaissier,
                   fontSize: 12,
@@ -1138,7 +1138,7 @@ class _ReservationFormScreenState extends State<ReservationFormScreen> {
       if (afficheFraisTransaction && majoration > 0) ...[
         if (!compact) const SizedBox(height: 4),
         Text(
-          'Frais de transaction '
+          'Frais plateforme Rusa Travel '
           '($_requiredPlaces × ${widget.voyage.montAddPaieElectronique.toStringAsFixed(0)} '
           '$_suffixeDeviseMajoration) : ${majoration.toStringAsFixed(0)} $_suffixeDeviseMajoration',
           style: TextStyle(
@@ -1150,7 +1150,7 @@ class _ReservationFormScreenState extends State<ReservationFormScreen> {
           Padding(
             padding: const EdgeInsets.only(top: 2),
             child: PaymentFeesLearnMoreText(
-              prefix: 'Inclus dans le total affiché (par passager).',
+              prefix: 'Détail du calcul, frais plateforme par passager et frais de transaction :',
               voyage: widget.voyage,
               isCaissier: _isVenteCaissier,
             ),
@@ -1168,6 +1168,7 @@ class _ReservationFormScreenState extends State<ReservationFormScreen> {
       if (afficheFraisTransaction && (compact || majoration <= 0)) ...[
         SizedBox(height: compact ? 2 : 4),
         PaymentFeesLearnMoreText(
+          prefix: 'Comprendre les frais de paiement électronique',
           voyage: widget.voyage,
           isCaissier: _isVenteCaissier,
           fontSize: compact ? 11 : 12,

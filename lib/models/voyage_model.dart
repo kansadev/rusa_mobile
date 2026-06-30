@@ -67,6 +67,11 @@ class Voyage {
   });
 
   factory Voyage.fromJson(Map<String, dynamic> json) {
+    double readDouble(dynamic v) {
+      if (v is num) return v.toDouble();
+      return double.tryParse('$v') ?? 0;
+    }
+
     String heureDepart = '';
     if (json['heureDepart'] != null) {
       if (json['heureDepart'] is String) {
@@ -105,8 +110,7 @@ class Voyage {
       nomSite: json['nomSite']?.toString(),
       villeDepart: json['villeDepart'] ?? '',
       villeArrivee: json['villeArrivee'] ?? '',
-      montAddPaieElectronique:
-          (json['montAddPaieElectronique'] ?? 0).toDouble(),
+      montAddPaieElectronique: readDouble(json['montAddPaieElectronique']),
       codeDeviseMontAddPaieElectronique:
           json['codeDeviseMontAddPaieElectronique']?.toString(),
       tarifs: (json['tarifs'] as List?)
@@ -183,7 +187,7 @@ class Voyage {
   bool get estActif => statut;
   String get prixFormatted => '${prix.toStringAsFixed(0)} FC';
 
-  /// Devise de la majoration paiement électronique (frais transaction / passager).
+  /// Devise des frais plateforme paiement électronique (par passager).
   String get deviseMajorationPaieElectronique {
     final m = codeDeviseMontAddPaieElectronique?.trim();
     if (m != null && m.isNotEmpty) return m;
@@ -193,6 +197,11 @@ class Voyage {
     if (principale != null && principale.isNotEmpty) return principale;
     return 'FC';
   }
+
+  /// Libellé court pour les frais unitaires (Mobile Money / Carte).
+  String get libelleFraisPaieElectroniqueUnitaire =>
+      '+${montAddPaieElectronique.toStringAsFixed(0)} '
+      '$deviseMajorationPaieElectronique / passager';
 
   bool get hasMajorationPaieElectronique => montAddPaieElectronique > 0;
 

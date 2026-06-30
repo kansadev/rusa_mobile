@@ -16,6 +16,7 @@ import 'package:rusa/screens/client/BusDetailsScreen.dart';
 import 'package:rusa/screens/client/ReservationFormScreen.dart';
 import 'package:rusa/screens/client/VehiclePhotosGalleryScreen.dart';
 import 'package:rusa/screens/SeatViewScreen.dart';
+import 'package:rusa/widgets/voyage_electronic_fee_notice.dart';
 
 class SeatSelectionScreen extends StatefulWidget {
   final Voyage voyage;
@@ -59,7 +60,7 @@ class _SeatSelectionScreenState extends State<SeatSelectionScreen> {
       ? _vehicleImages.length
       : _fallbackCarouselImages.length;
 
-  static const double _carouselImageRadius = 16;
+  static const double _carouselImageRadius = 24;
 
   void _openPhotoGallery({int initialIndex = 0}) {
     Navigator.push(
@@ -78,27 +79,23 @@ class _SeatSelectionScreenState extends State<SeatSelectionScreen> {
   }
 
   Widget _buildCarouselImage(int index) {
-    final borderRadius = BorderRadius.circular(_carouselImageRadius);
     final child = _vehicleImages.isNotEmpty
         ? Image.memory(
             _vehicleImages[index],
-            fit: BoxFit.contain,
+            fit: BoxFit.cover,
             width: double.infinity,
             height: double.infinity,
           )
         : Image.asset(
             _fallbackCarouselImages[index],
-            fit: BoxFit.contain,
+            fit: BoxFit.cover,
             width: double.infinity,
             height: double.infinity,
           );
 
     return Hero(
       tag: 'vehicle_photo_$index',
-      child: ClipRRect(
-        borderRadius: borderRadius,
-        child: ColoredBox(color: const Color(0xFF151515), child: child),
-      ),
+      child: child,
     );
   }
 
@@ -257,174 +254,211 @@ class _SeatSelectionScreenState extends State<SeatSelectionScreen> {
 
   double _carouselSectionHeight(BuildContext context) {
     final h = MediaQuery.sizeOf(context).height;
-    return (h * 0.38).clamp(280.0, 420.0);
+    return (h * 0.42).clamp(300.0, 440.0);
   }
+
+  static const double _sheetOverlap = 40;
 
   @override
   Widget build(BuildContext context) {
     final carouselHeight = _carouselSectionHeight(context);
+    final topPadding = MediaQuery.paddingOf(context).top;
 
     return Scaffold(
       backgroundColor: const Color(0xFF121212),
-      body: SafeArea(
-        child: Column(
-          children: [
-            // Section supérieure avec l'image
-            Container(
-              height: carouselHeight,
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [Color(0xFF1A1A1A), Color(0xFF0D0D0D)],
-                ),
-              ),
-              child: Stack(
-                children: [
-                  // Carousel d'images
-                  PageView.builder(
-                    controller: _pageController,
-                    onPageChanged: (index) {
-                      setState(() {
-                        _currentPage = index;
-                      });
-                    },
-                    itemCount: _carouselCount,
-                    itemBuilder: (context, index) {
-                      return Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
-                        child: Material(
-                          color: Colors.transparent,
-                          child: InkWell(
-                            onTap: () => _openPhotoGallery(initialIndex: index),
-                            borderRadius: BorderRadius.circular(
-                              _carouselImageRadius,
-                            ),
-                            child: Stack(
-                              fit: StackFit.expand,
-                              children: [
-                                _buildCarouselImage(index),
-                                if (_carouselCount > 1)
-                                  Positioned(
-                                    right: 10,
-                                    bottom: 10,
-                                    child: Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 8,
-                                        vertical: 4,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: Colors.black.withValues(
-                                          alpha: 0.55,
-                                        ),
-                                        borderRadius: BorderRadius.circular(8),
-                                      ),
-                                      child: const Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          Icon(
-                                            Icons.fullscreen,
-                                            color: Colors.white,
-                                            size: 16,
-                                          ),
-                                          SizedBox(width: 4),
-                                          Text(
-                                            'Agrandir',
-                                            style: TextStyle(
-                                              color: Colors.white,
-                                              fontSize: 11,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-
-                  // Indicateurs de page
-                  Positioned(
-                    bottom: 20,
-                    left: 0,
-                    right: 0,
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: List.generate(
-                        _carouselCount,
-                        (index) => Container(
-                          margin: const EdgeInsets.symmetric(horizontal: 4),
-                          width: _currentPage == index ? 12 : 8,
-                          height: 8,
-                          decoration: BoxDecoration(
-                            color: _currentPage == index
-                                ? const Color(0xFF00E676)
-                                : Colors.white38,
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-
-                  // Boutons de navigation
-                  Positioned(
-                    top: 16,
-                    left: 16,
-                    child: _buildCircularButton(
-                      Icons.arrow_back_ios_new_rounded,
-                      () => Navigator.pop(context),
-                    ),
-                  ),
-                  Positioned(
-                    top: 16,
-                    right: 16,
-                    child: _buildVoyageOptionsMenu(),
-                  ),
-                ],
-              ),
+      body: Stack(
+        children: [
+          CustomScrollView(
+            physics: const BouncingScrollPhysics(
+              parent: AlwaysScrollableScrollPhysics(),
             ),
-
-            // Section inférieure avec les détails
-            Expanded(
-              child: Container(
-                padding: const EdgeInsets.all(24.0),
-                decoration: const BoxDecoration(
-                  color: Color(0xFF222222),
-                  borderRadius: BorderRadius.only(
-                    topLeft: Radius.circular(40),
-                    topRight: Radius.circular(40),
-                  ),
+            slivers: [
+              SliverToBoxAdapter(
+                child: SizedBox(
+                  height: carouselHeight,
+                  child: _buildCarouselSection(topPadding),
                 ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Indicateur de drag
-                    Center(
-                      child: Container(
-                        width: 40,
-                        height: 5,
-                        margin: const EdgeInsets.only(bottom: 20),
+              ),
+              SliverToBoxAdapter(
+                child: Transform.translate(
+                  offset: const Offset(0, -_sheetOverlap),
+                  child: _buildDetailsPanel(),
+                ),
+              ),
+              SliverPadding(
+                padding: EdgeInsets.only(
+                  bottom: MediaQuery.paddingOf(context).bottom + 16,
+                ),
+              ),
+            ],
+          ),
+
+          // Boutons flottants sur le carousel
+          Positioned(
+            top: topPadding + 16,
+            left: 16,
+            right: 16,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                _buildCircularButton(
+                  Icons.arrow_back_ios_new_rounded,
+                  () => Navigator.pop(context),
+                ),
+                _buildVoyageOptionsMenu(),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCarouselSection(double topPadding) {
+    return DecoratedBox(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [Color(0xFF1A1A1A), Color(0xFF0D0D0D)],
+        ),
+      ),
+      child: Stack(
+        children: [
+          PageView.builder(
+            controller: _pageController,
+            onPageChanged: (index) {
+              setState(() => _currentPage = index);
+            },
+            itemCount: _carouselCount,
+            itemBuilder: (context, index) {
+              return Padding(
+                padding: EdgeInsets.fromLTRB(16, topPadding + 56, 16, 36),
+                child: Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    onTap: () => _openPhotoGallery(initialIndex: index),
+                    borderRadius: BorderRadius.circular(_carouselImageRadius),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(_carouselImageRadius),
+                      child: DecoratedBox(
                         decoration: BoxDecoration(
-                          color: Colors.white24,
-                          borderRadius: BorderRadius.circular(10),
+                          color: const Color(0xFF151515),
+                          borderRadius:
+                              BorderRadius.circular(_carouselImageRadius),
+                          border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.1),
+                          ),
+                        ),
+                        child: Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            _buildCarouselImage(index),
+                            if (_carouselCount > 1)
+                              Positioned(
+                                right: 10,
+                                bottom: 10,
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 4,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.black.withValues(alpha: 0.55),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: const Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        Icons.fullscreen,
+                                        color: Colors.white,
+                                        size: 16,
+                                      ),
+                                      SizedBox(width: 4),
+                                      Text(
+                                        'Agrandir',
+                                        style: TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 11,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                          ],
                         ),
                       ),
                     ),
-
-                    // Contenu scrollable
-                    Expanded(
-                      child: SingleChildScrollView(child: _buildContent()),
-                    ),
-                  ],
+                  ),
                 ),
+              );
+            },
+          ),
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: _sheetOverlap + 12,
+            child: _buildPageIndicators(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDetailsPanel() {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: const Color(0xFF222222),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(40)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.5),
+            blurRadius: 28,
+            offset: const Offset(0, -8),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const SizedBox(height: 12),
+          Center(
+            child: Container(
+              width: 40,
+              height: 5,
+              decoration: BoxDecoration(
+                color: Colors.white24,
+                borderRadius: BorderRadius.circular(10),
               ),
             ),
-          ],
+          ),
+          const SizedBox(height: 20),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 0, 24, 32),
+            child: _buildContent(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPageIndicators() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: List.generate(
+        _carouselCount,
+        (index) => Container(
+          margin: const EdgeInsets.symmetric(horizontal: 4),
+          width: _currentPage == index ? 12 : 8,
+          height: 8,
+          decoration: BoxDecoration(
+            color: _currentPage == index
+                ? const Color(0xFF00E676)
+                : Colors.white38,
+            borderRadius: BorderRadius.circular(4),
+          ),
         ),
       ),
     );
@@ -435,6 +469,14 @@ class _SeatSelectionScreenState extends State<SeatSelectionScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        if (widget.voyage.hasMajorationPaieElectronique)
+          VoyageElectronicFeeNotice(
+            voyage: widget.voyage,
+            compact: false,
+            isCaissier: _isVenteCaissier,
+          ),
+        if (widget.voyage.hasMajorationPaieElectronique)
+          const SizedBox(height: 16),
         // Titre et infos du trajet
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,

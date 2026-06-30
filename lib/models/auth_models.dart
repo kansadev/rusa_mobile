@@ -378,7 +378,7 @@ class Client {
   }
 }
 
-/// Réponse paginée de `GET /api/Client/societe/{idSociete}/paged`.
+/// Réponse paginée de `GET /api/Client/paged` ou `GET /api/Client/societe/{idSociete}/paged`.
 class ClientPagedResponse {
   final List<Client> data;
   final int totalCount;

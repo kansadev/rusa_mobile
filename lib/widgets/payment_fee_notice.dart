@@ -79,7 +79,7 @@ class _PaymentFeesLearnMoreTextState extends State<PaymentFeesLearnMoreText> {
         children: [
           if (prefix != null && prefix.isNotEmpty) TextSpan(text: '$prefix '),
           TextSpan(
-            text: 'En savoir plus',
+            text: 'En savoir plus sur les frais',
             style: const TextStyle(
               color: Color(0xFF64B5F6),
               fontWeight: FontWeight.w600,

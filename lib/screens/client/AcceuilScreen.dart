@@ -566,6 +566,14 @@ class _SearchTripScreenState extends State<SearchTripScreen> {
     );
   }
 
+  String _suffixeDevisePrix(Voyage v) {
+    final c = v.codeDevisePrix?.trim();
+    if (c != null && c.isNotEmpty) return c;
+    final p = v.codeDevisePrincipale?.trim();
+    if (p != null && p.isNotEmpty) return p;
+    return 'FC';
+  }
+
   Widget _buildVoyageCard(Voyage voyage) {
     final isPassed = _isVoyageDepartPasse(voyage);
     return Material(
@@ -742,7 +750,8 @@ class _SearchTripScreenState extends State<SearchTripScreen> {
                               border: Border.all(color: Colors.white12),
                             ),
                             child: Text(
-                              '${t.libelle}: ${t.prix.toStringAsFixed(0)} FC',
+                              '${t.libelle}: ${t.prix.toStringAsFixed(0)} '
+                              '${_suffixeDevisePrix(voyage)}',
                               style: const TextStyle(
                                 color: Colors.white,
                                 fontSize: 12,

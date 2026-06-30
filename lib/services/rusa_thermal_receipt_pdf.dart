@@ -189,7 +189,7 @@ class RusaThermalReceiptPdf {
         if (data.montantMajorationElectronique > 0) ...[
           pw.SizedBox(height: 2),
           _amountRow(
-            'Frais transaction (${data.majorationDetailLabel}):',
+            'Frais plateforme Rusa Travel (${data.majorationDetailLabel}):',
             data.montantMajorationLabel,
           ),
         ],
@@ -198,7 +198,7 @@ class RusaThermalReceiptPdf {
         if (data.isPaiementElectronique) ...[
           pw.SizedBox(height: 3),
           pw.Text(
-            'Frais passerelle ~2,5% sur le total (non inclus).',
+            'Frais de transaction ~2,5% sur le total (non inclus).',
             style: const pw.TextStyle(fontSize: 6, color: PdfColors.grey700),
           ),
         ],

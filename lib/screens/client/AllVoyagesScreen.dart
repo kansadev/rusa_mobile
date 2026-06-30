@@ -863,7 +863,6 @@ class _AllVoyagesScreenState extends State<AllVoyagesScreen> {
                       ],
                     ),
                   ],
-                  const SizedBox(height: 12),
                   Wrap(
                     spacing: 12,
                     runSpacing: 8,

@@ -9,7 +9,7 @@ class ThermalTicketReceiptCard extends StatelessWidget {
   const ThermalTicketReceiptCard({
     super.key,
     required this.data,
-  });
+  });    
 
   @override
   Widget build(BuildContext context) {
@@ -203,7 +203,7 @@ class ThermalTicketReceiptCard extends StatelessWidget {
         _amountRow('Billets:', data.montantBilletsLabel),
         if (data.montantMajorationElectronique > 0) ...[
           const SizedBox(height: 2),
-          _amountRow('Frais transaction (${data.majorationDetailLabel}):',
+          _amountRow('Frais plateforme Rusa Travel (${data.majorationDetailLabel}):',
               data.montantMajorationLabel),
         ],
         const SizedBox(height: 2),
@@ -211,7 +211,7 @@ class ThermalTicketReceiptCard extends StatelessWidget {
         if (data.isPaiementElectronique) ...[
           const SizedBox(height: 4),
           const Text(
-            'Frais passerelle ~2,5% sur le total (non inclus).',
+            'Frais de transaction ~2,5% sur le total (non inclus).',
             style: TextStyle(fontSize: 8, color: Colors.black54, height: 1.3),
           ),
         ],

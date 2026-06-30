@@ -32,7 +32,6 @@ class _CaissierClientsListScreenState extends State<CaissierClientsListScreen> {
   _ClientListScope _scope = _ClientListScope.societe;
   int _idSociete = 0;
   List<Client> _clients = [];
-  List<Client> _platformAll = [];
   int _totalCount = 0;
   int _nextPageNumber = 1;
   bool _hasNextPage = true;
@@ -40,6 +39,7 @@ class _CaissierClientsListScreenState extends State<CaissierClientsListScreen> {
   bool _loadingMore = false;
   String? _error;
   Timer? _searchDebounce;
+  int? _selectedClientId;
 
   @override
   void initState() {
@@ -73,7 +73,6 @@ class _CaissierClientsListScreenState extends State<CaissierClientsListScreen> {
   }
 
   void _onScroll() {
-    if (_scope != _ClientListScope.societe) return;
     if (!_scrollController.hasClients) return;
     final pos = _scrollController.position;
     if (pos.pixels >= pos.maxScrollExtent - 200) {
@@ -85,12 +84,31 @@ class _CaissierClientsListScreenState extends State<CaissierClientsListScreen> {
     _searchDebounce?.cancel();
     _searchDebounce = Timer(const Duration(milliseconds: 450), () {
       if (!mounted) return;
-      if (_scope == _ClientListScope.societe) {
-        _loadClients(reset: true);
-      } else {
-        _applyPlatformFilter();
-      }
+      _loadClients(reset: true);
     });
+  }
+
+  Future<ClientPagedResponse?> _fetchClientsPage(int pageNumber) {
+    final search = _searchController.text.trim();
+    if (_scope == _ClientListScope.plateforme) {
+      return ApiService.getClientsPaged(
+        pageNumber: pageNumber,
+        pageSize: _pageSize,
+        searchTerm: search,
+        sortBy: 'idClient',
+        sortDescending: true,
+        includeInactive: true,
+      );
+    }
+    return ApiService.getClientsBySocietePaged(
+      idSociete: _idSociete,
+      pageNumber: pageNumber,
+      pageSize: _pageSize,
+      searchTerm: search,
+      sortBy: 'idClient',
+      sortDescending: true,
+      includeInactive: true,
+    );
   }
 
   void _onScopeChanged(_ClientListScope scope) {
@@ -100,7 +118,7 @@ class _CaissierClientsListScreenState extends State<CaissierClientsListScreen> {
   }
 
   Future<void> _loadClients({required bool reset}) async {
-    if (_idSociete <= 0) return;
+    if (_scope == _ClientListScope.societe && _idSociete <= 0) return;
 
     if (reset) {
       setState(() {
@@ -112,28 +130,16 @@ class _CaissierClientsListScreenState extends State<CaissierClientsListScreen> {
       });
     }
 
-    if (_scope == _ClientListScope.plateforme) {
-      await _loadPlatformClients();
-      return;
-    }
-
-    final response = await ApiService.getClientsBySocietePaged(
-      idSociete: _idSociete,
-      pageNumber: 1,
-      pageSize: _pageSize,
-      searchTerm: _searchController.text.trim(),
-      sortBy: 'idClient',
-      sortDescending: true,
-      includeInactive: true,
-    );
+    final response = await _fetchClientsPage(1);
 
     if (!mounted) return;
 
     if (response == null) {
       setState(() {
         _loading = false;
-        _error =
-            'Impossible de charger les clients. Vérifiez la connexion ou vos droits.';
+        _error = _scope == _ClientListScope.plateforme
+            ? 'Impossible de charger les clients plateforme. Vérifiez la connexion.'
+            : 'Impossible de charger les clients. Vérifiez la connexion ou vos droits.';
         _clients = [];
         _hasNextPage = false;
       });
@@ -150,68 +156,13 @@ class _CaissierClientsListScreenState extends State<CaissierClientsListScreen> {
     });
   }
 
-  Future<void> _loadPlatformClients() async {
-    final list = await ApiService.getAllClients();
-    if (!mounted) return;
-
-    if (list == null) {
-      setState(() {
-        _loading = false;
-        _error =
-            'Impossible de charger les clients plateforme. Vérifiez la connexion.';
-        _platformAll = [];
-        _clients = [];
-        _totalCount = 0;
-      });
-      return;
-    }
-
-    list.sort((a, b) => b.idClient.compareTo(a.idClient));
-    setState(() {
-      _platformAll = list;
-      _loading = false;
-      _error = null;
-    });
-    _applyPlatformFilter();
-  }
-
-  void _applyPlatformFilter() {
-    final q = _searchController.text.trim().toLowerCase();
-    final filtered = q.isEmpty
-        ? List<Client>.from(_platformAll)
-        : _platformAll.where((c) {
-            final nom = c.nomClient.toLowerCase();
-            final mail = c.emailClient.toLowerCase();
-            final tel = c.telephone.toLowerCase();
-            final adr = (c.adresseClient ?? '').toLowerCase();
-            return nom.contains(q) ||
-                mail.contains(q) ||
-                tel.contains(q) ||
-                adr.contains(q);
-          }).toList();
-
-    setState(() {
-      _clients = filtered;
-      _totalCount = filtered.length;
-      _hasNextPage = false;
-    });
-  }
-
   Future<void> _loadMore() async {
-    if (_scope != _ClientListScope.societe) return;
-    if (_loadingMore || !_hasNextPage || _loading || _idSociete <= 0) return;
+    if (_loadingMore || !_hasNextPage || _loading) return;
+    if (_scope == _ClientListScope.societe && _idSociete <= 0) return;
 
     setState(() => _loadingMore = true);
 
-    final response = await ApiService.getClientsBySocietePaged(
-      idSociete: _idSociete,
-      pageNumber: _nextPageNumber,
-      pageSize: _pageSize,
-      searchTerm: _searchController.text.trim(),
-      sortBy: 'idClient',
-      sortDescending: true,
-      includeInactive: true,
-    );
+    final response = await _fetchClientsPage(_nextPageNumber);
 
     if (!mounted) return;
 
@@ -236,6 +187,11 @@ class _CaissierClientsListScreenState extends State<CaissierClientsListScreen> {
     );
     if (created == null || !mounted) return;
 
+    Client? newClient;
+    if (created is Client) {
+      newClient = created;
+    }
+
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
         content: Text(
@@ -246,8 +202,37 @@ class _CaissierClientsListScreenState extends State<CaissierClientsListScreen> {
       ),
     );
 
-    setState(() => _scope = _ClientListScope.plateforme);
+    _searchDebounce?.cancel();
+    _searchController.removeListener(_onSearchChanged);
+    _searchController.clear();
+    _searchController.addListener(_onSearchChanged);
+
+    setState(() {
+      _scope = _ClientListScope.plateforme;
+      _selectedClientId = newClient?.idClient;
+    });
+
     await _loadClients(reset: true);
+
+    if (!mounted || newClient == null) return;
+
+    final createdClient = newClient;
+    setState(() {
+      _selectedClientId = createdClient.idClient;
+      if (!_clients.any((c) => c.idClient == createdClient.idClient)) {
+        _clients = [createdClient, ..._clients];
+        _totalCount += 1;
+      }
+    });
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_scrollController.hasClients) return;
+      _scrollController.animateTo(
+        0,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOut,
+      );
+    });
   }
 
   String _scopeLabel(_ClientListScope scope) => switch (scope) {
@@ -468,11 +453,18 @@ class _CaissierClientsListScreenState extends State<CaissierClientsListScreen> {
 
         final c = _clients[i];
         final badge = _clientBadge(c);
+        final isSelected = c.idClient == _selectedClientId;
 
         return Material(
-          color: _card,
+          color: isSelected ? _accent.withValues(alpha: 0.12) : _card,
           borderRadius: BorderRadius.circular(16),
           child: ListTile(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+              side: isSelected
+                  ? const BorderSide(color: _accent, width: 1.5)
+                  : BorderSide.none,
+            ),
             contentPadding: const EdgeInsets.symmetric(
               horizontal: 16,
               vertical: 8,
@@ -527,6 +519,15 @@ class _CaissierClientsListScreenState extends State<CaissierClientsListScreen> {
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
+                if (isSelected)
+                  const Padding(
+                    padding: EdgeInsets.only(bottom: 4),
+                    child: Icon(
+                      Icons.check_circle_rounded,
+                      color: _accent,
+                      size: 18,
+                    ),
+                  ),
                 if (badge != null)
                   Container(
                     padding: const EdgeInsets.symmetric(
@@ -568,6 +569,7 @@ class _CaissierClientsListScreenState extends State<CaissierClientsListScreen> {
               ],
             ),
             onTap: () {
+              setState(() => _selectedClientId = c.idClient);
               Navigator.push(
                 context,
                 MaterialPageRoute(

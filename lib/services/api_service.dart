@@ -26,6 +26,7 @@ import '../models/voyage_passager_model.dart';
 import '../models/billet_check_response.dart';
 import '../models/voyage_sieges_disponibles_model.dart';
 import '../models/flexpay_verify_result.dart';
+import '../models/caissier_rapport_caisse.dart';
 import 'session_service.dart';
 import 'cache_service.dart';
 
@@ -44,7 +45,7 @@ class ApiService {
 
   /// Choix manuel de l'environnement:
   /// 0 = dev, 1 = staging, 2 = production
-  static const int _environmentIndex = 2;
+  static const int _environmentIndex = 1;
 
   // Méthode pour déterminer l'URL de base en fonction de l'environnement
   static String get baseUrl => _getBaseUrl();
@@ -230,6 +231,65 @@ class ApiService {
     } catch (e) {
       debugPrint('Erreur récupération access_token: $e');
       return null;
+    }
+  }
+
+  /// GET `/api/FlexPay/cancel?orderNumber=` — annule un paiement FlexPay en attente.
+  static Future<({bool success, String? message})> cancelFlexPayOrder(
+    String orderNumber,
+  ) async {
+    final trimmed = orderNumber.trim();
+    if (trimmed.isEmpty) {
+      return (success: false, message: 'Numéro de commande FlexPay manquant.');
+    }
+
+    try {
+      final headers = await _getHeaders();
+      final uri = Uri.parse('$baseUrl/FlexPay/cancel').replace(
+        queryParameters: {'orderNumber': trimmed},
+      );
+      final response = await http.get(uri, headers: headers);
+      debugPrint('FlexPay cancel: ${response.statusCode} ${response.body}');
+
+      dynamic decoded;
+      try {
+        decoded = json.decode(response.body);
+      } catch (_) {
+        decoded = null;
+      }
+
+      String? apiMsg;
+      if (decoded is Map) {
+        apiMsg =
+            decoded['message']?.toString() ?? decoded['detail']?.toString();
+      }
+
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        return (
+          success: true,
+          message: apiMsg?.trim().isNotEmpty == true
+              ? apiMsg!.trim()
+              : 'Paiement annulé.',
+        );
+      }
+
+      return (
+        success: false,
+        message: userFacingApiMessage(
+          apiMsg,
+          httpStatus: response.statusCode,
+          fallback: 'Impossible d\'annuler le paiement pour le moment.',
+        ),
+      );
+    } catch (e) {
+      debugPrint('cancelFlexPayOrder: $e');
+      return (
+        success: false,
+        message: userFacingError(
+          e,
+          fallback: 'Annulation temporairement indisponible.',
+        ),
+      );
     }
   }
 
@@ -1066,6 +1126,77 @@ class ApiService {
     }
   }
 
+  /// Rapport de caisse (`GET /api/CaissierDashboard/rapport-caisse`).
+  static Future<({CaissierRapportCaisse? data, String? error})>
+  getCaissierRapportCaisse({
+    DateTime? datePrecise,
+    DateTime? dateDebut,
+    DateTime? dateFin,
+  }) async {
+    try {
+      final headers = await _getHeaders();
+      final qp = <String, String>{};
+      if (datePrecise != null) {
+        qp['datePrecise'] = _isoDateQuery(datePrecise);
+      }
+      if (dateDebut != null) {
+        qp['dateDebut'] = _isoDateQuery(dateDebut);
+      }
+      if (dateFin != null) {
+        qp['dateFin'] = _isoDateQuery(dateFin, endOfDay: true);
+      }
+
+      final uri = Uri.parse('$baseUrl/CaissierDashboard/rapport-caisse')
+          .replace(queryParameters: qp.isEmpty ? null : qp);
+
+      debugPrint('Requête rapport caisse: $uri');
+      final response = await http.get(uri, headers: headers);
+      debugPrint('Status rapport caisse: ${response.statusCode}');
+
+      dynamic decoded;
+      try {
+        decoded = json.decode(response.body);
+      } catch (_) {
+        decoded = null;
+      }
+
+      if (response.statusCode == 200 && decoded is Map<String, dynamic>) {
+        return (data: CaissierRapportCaisse.fromJson(decoded), error: null);
+      }
+
+      String? apiMsg;
+      if (decoded is Map) {
+        apiMsg =
+            decoded['message']?.toString() ?? decoded['detail']?.toString();
+      }
+      return (
+        data: null,
+        error: userFacingApiMessage(
+          apiMsg,
+          httpStatus: response.statusCode,
+          fallback: 'Impossible de charger le rapport de caisse.',
+        ),
+      );
+    } catch (e) {
+      debugPrint('Erreur getCaissierRapportCaisse: $e');
+      return (
+        data: null,
+        error: userFacingError(
+          e,
+          fallback: 'Rapport de caisse temporairement indisponible.',
+        ),
+      );
+    }
+  }
+
+  static String _isoDateQuery(DateTime date, {bool endOfDay = false}) {
+    final local = DateTime(date.year, date.month, date.day);
+    final value = endOfDay
+        ? local.add(const Duration(hours: 23, minutes: 59, seconds: 59))
+        : local;
+    return value.toUtc().toIso8601String();
+  }
+
   /// Liste des clients (`GET /api/Client`) — réservé aux rôles autorisés (token requis).
   static Future<List<Client>?> getAllClients() async {
     try {
@@ -1099,6 +1230,48 @@ class ApiService {
       return null;
     } catch (e) {
       debugPrint('Erreur getAllClients: $e');
+      return null;
+    }
+  }
+
+  /// Clients paginés plateforme (`GET /api/Client/paged`).
+  static Future<ClientPagedResponse?> getClientsPaged({
+    int pageNumber = 1,
+    int pageSize = 20,
+    String? searchTerm,
+    String? sortBy,
+    bool sortDescending = true,
+    bool includeInactive = true,
+  }) async {
+    try {
+      final headers = await _getHeaders();
+      final qp = <String, String>{
+        'PageNumber': pageNumber.toString(),
+        'PageSize': pageSize.toString(),
+        'SortDescending': sortDescending.toString(),
+        'IncludeInactive': includeInactive.toString(),
+        if (searchTerm != null && searchTerm.trim().isNotEmpty)
+          'SearchTerm': searchTerm.trim(),
+        if (sortBy != null && sortBy.isNotEmpty) 'SortBy': sortBy,
+      };
+      final uri = Uri.parse('$baseUrl/Client/paged').replace(
+        queryParameters: qp,
+      );
+
+      debugPrint('Requête clients paged: $uri');
+      final response = await http.get(uri, headers: headers);
+      debugPrint('Status clients paged: ${response.statusCode}');
+
+      if (response.statusCode == 200) {
+        final decoded = json.decode(response.body);
+        if (decoded is Map<String, dynamic>) {
+          return ClientPagedResponse.fromJson(decoded);
+        }
+      }
+      debugPrint('getClientsPaged: ${response.body}');
+      return null;
+    } catch (e) {
+      debugPrint('Erreur getClientsPaged: $e');
       return null;
     }
   }

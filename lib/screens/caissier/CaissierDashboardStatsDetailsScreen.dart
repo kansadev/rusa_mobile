@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:rusa/screens/caissier/CaissierRapportCaisseScreen.dart';
 import 'package:rusa/services/api_service.dart';
 import 'package:rusa/widgets/caissier_analytics_chart_card.dart';
 import 'package:rusa/widgets/caissier_metric_line_chart.dart';
@@ -120,6 +121,20 @@ class _CaissierDashboardStatsDetailsScreenState
           ),
         ),
         iconTheme: const IconThemeData(color: Colors.white),
+        actions: [
+          IconButton(
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const CaissierRapportCaisseScreen(),
+                ),
+              );
+            },
+            icon: const Icon(Icons.summarize_outlined),
+            tooltip: 'Statistiques caisse',
+          ),
+        ],
       ),
       body: _buildBody(),
     );

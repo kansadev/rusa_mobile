@@ -32,6 +32,7 @@ class MobileMoneyPendingScreen extends StatefulWidget {
 class _MobileMoneyPendingScreenState extends State<MobileMoneyPendingScreen> {
   bool _isLoading = true;
   bool _isTrackingPayment = false;
+  bool _isCancelling = false;
   String? _error;
   dynamic _response;
   Map<String, dynamic>? _pending;
@@ -423,9 +424,105 @@ class _MobileMoneyPendingScreenState extends State<MobileMoneyPendingScreen> {
     });
   }
 
+  bool get _canCancel =>
+      !_isCancelling && _response == null && (_isLoading || _pending != null);
+
+  Future<void> _requestCancel() async {
+    if (!_canCancel || !mounted) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF1E1E1E),
+        title: Text(
+          'Annuler le paiement ?',
+          style: GoogleFonts.poppins(
+            color: Colors.white,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        content: Text(
+          _orderNumberFlexPay != null && _orderNumberFlexPay!.isNotEmpty
+              ? 'La réservation ne sera pas finalisée et les places '
+                  'temporairement retenues seront libérées.'
+              : 'La préparation du paiement sera interrompue. '
+                  'Aucune réservation ne sera créée.',
+          style: GoogleFonts.poppins(color: Colors.white70, fontSize: 14),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text(
+              'Continuer',
+              style: GoogleFonts.poppins(color: Colors.white54),
+            ),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text(
+              'Oui, annuler',
+              style: GoogleFonts.poppins(color: Colors.redAccent),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && mounted) {
+      await _cancelOperation();
+    }
+  }
+
+  Future<void> _cancelOperation() async {
+    if (_isCancelling) return;
+
+    setState(() => _isCancelling = true);
+    _paymentTracker?.dispose();
+    _paymentTracker = null;
+    _countdownTimer?.cancel();
+
+    final order = _orderNumberFlexPay?.trim();
+    if (order != null && order.isNotEmpty) {
+      final result = await ApiService.cancelFlexPayOrder(order);
+      if (!mounted) return;
+
+      if (!result.success) {
+        setState(() => _isCancelling = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              result.message ?? 'Impossible d\'annuler le paiement.',
+              style: GoogleFonts.poppins(),
+            ),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+        return;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            result.message ?? 'Paiement annulé.',
+            style: GoogleFonts.poppins(),
+          ),
+          backgroundColor: Colors.white24,
+        ),
+      );
+    }
+
+    if (!mounted) return;
+    Navigator.pop(context, false);
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return PopScope(
+      canPop: !_canCancel,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop) _requestCancel();
+      },
+      child: Scaffold(
       backgroundColor: const Color(0xFF121212),
       appBar: AppBar(
         backgroundColor: const Color(0xFF121212),
@@ -440,7 +537,7 @@ class _MobileMoneyPendingScreenState extends State<MobileMoneyPendingScreen> {
         centerTitle: true,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios_new_rounded),
-          onPressed: _isTrackingPayment ? null : () => Navigator.pop(context),
+          onPressed: _canCancel ? _requestCancel : null,
         ),
       ),
       body: Center(
@@ -473,6 +570,28 @@ class _MobileMoneyPendingScreenState extends State<MobileMoneyPendingScreen> {
                         fontSize: 13,
                       ),
                     ),
+                    if (_canCancel) ...[
+                      const SizedBox(height: 20),
+                      TextButton(
+                        onPressed: _isCancelling ? null : _requestCancel,
+                        child: _isCancelling
+                            ? const SizedBox(
+                                width: 22,
+                                height: 22,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.redAccent,
+                                ),
+                              )
+                            : Text(
+                                'Annuler l\'opération',
+                                style: GoogleFonts.poppins(
+                                  color: Colors.redAccent,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                      ),
+                    ],
                   ],
                 )
               : _error != null
@@ -547,7 +666,8 @@ class _MobileMoneyPendingScreenState extends State<MobileMoneyPendingScreen> {
                     const SizedBox(height: 8),
                     Text(
                       _isTrackingPayment
-                          ? 'Nous attendons la validation FlexPay. Ne fermez pas cette page.'
+                          ? 'Nous attendons la validation FlexPay. '
+                              'Vous pouvez annuler l\'opération si vous changez d\'avis.'
                           : _pendingMessage(),
                       textAlign: TextAlign.center,
                       style: GoogleFonts.poppins(
@@ -601,9 +721,32 @@ class _MobileMoneyPendingScreenState extends State<MobileMoneyPendingScreen> {
                         child: const Text('Fermer'),
                       ),
                     ],
+                    if (_canCancel) ...[
+                      const SizedBox(height: 12),
+                      TextButton(
+                        onPressed: _isCancelling ? null : _requestCancel,
+                        child: _isCancelling
+                            ? const SizedBox(
+                                width: 22,
+                                height: 22,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.redAccent,
+                                ),
+                              )
+                            : Text(
+                                'Annuler l\'opération',
+                                style: GoogleFonts.poppins(
+                                  color: Colors.redAccent,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                      ),
+                    ],
                   ],
                 ),
         ),
+      ),
       ),
     );
   }
